@@ -3,6 +3,7 @@ use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use array2d::Array2D;
+use serde::Deserialize;
 use crate::grid::CellContents::{Points, Subcells};
 
 /// Value the u16 export uses for points without any LiDAR return.
@@ -238,6 +239,8 @@ impl FullGrid {
     }
 }
 
+/// The columns of index.csv this loader needs.
+#[derive(Deserialize)]
 struct IndexRow {
     file: String,
     width: usize,
@@ -253,34 +256,10 @@ fn invalid(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.to_string())
 }
 
-/// Minimal CSV reader: the export has no quoted fields, so splitting on commas is enough.
 fn read_index(path: &Path) -> io::Result<Vec<IndexRow>> {
-    let text = fs::read_to_string(path)?;
-    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    let header: Vec<&str> = lines.next().ok_or_else(|| invalid("index.csv is empty"))?.split(',').collect();
-    let column = |name: &str| header.iter().position(|h| *h == name).ok_or_else(|| invalid(&format!("index.csv has no column {name}")));
-    let (file, width, height) = (column("file")?, column("width")?, column("height")?);
-    let (x_start, y_start, x_end) = (column("x_start")?, column("y_start")?, column("x_end")?);
-    let (alt_min, alt_max) = (column("alt_min")?, column("alt_max")?);
-
-    lines
-        .map(|line| {
-            let fields: Vec<&str> = line.split(',').collect();
-            let get = |i: usize| fields.get(i).copied().ok_or_else(|| invalid(&format!("short line in index.csv: {line}")));
-            let num = |i: usize| get(i)?.parse::<f64>().map_err(|e| invalid(&format!("{e} in index.csv line: {line}")));
-            let int = |i: usize| get(i)?.parse::<usize>().map_err(|e| invalid(&format!("{e} in index.csv line: {line}")));
-            Ok(IndexRow {
-                file: get(file)?.to_string(),
-                width: int(width)?,
-                height: int(height)?,
-                x_start: num(x_start)?,
-                y_start: num(y_start)?,
-                x_end: num(x_end)?,
-                alt_min: num(alt_min)?,
-                alt_max: num(alt_max)?,
-            })
-        })
-        .collect()
+    // Columns not in IndexRow (name, crs, lat/lon, ...) are ignored
+    let rows = csv::Reader::from_path(path)?.deserialize().collect::<Result<Vec<IndexRow>, _>>()?;
+    Ok(rows)
 }
 
 #[cfg(test)]

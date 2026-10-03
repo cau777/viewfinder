@@ -1,4 +1,6 @@
 pub mod grid;
+pub mod ray_tracing;
+pub mod util;
 
 use std::path::PathBuf;
 use pyo3::prelude::*;
