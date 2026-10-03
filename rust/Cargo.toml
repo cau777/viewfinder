@@ -1,13 +1,19 @@
 [package]
 name = "viewfinder-core"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+publish = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "viewfinder_core"
+# cdylib  -> the shared object Python imports
+# rlib    -> lets `cargo test` link the crate for pure-Rust unit tests
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+# abi3-py310: one wheel works on every CPython >= 3.10 (see DEPLOYMENT.md)
 pyo3 = { version = "0.29", features = ["abi3-py310", "experimental-inspect"] }
 
+[profile.release]
+lto = "thin"
+codegen-units = 1

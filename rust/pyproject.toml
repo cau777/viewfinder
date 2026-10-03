@@ -1,29 +1,22 @@
 [build-system]
-requires = ["maturin>=1.15,<2.0"]
+requires = ["maturin>=1.15,<2"]
 build-backend = "maturin"
 
 [project]
 name = "viewfinder-core"
+version = "0.1.0"
+description = "Rust core for viewfinder (PyO3)"
 requires-python = ">=3.10"
-classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-]
-dynamic = ["version"]
-[project.optional-dependencies]
-tests = [
-    "pytest",
-]
+classifiers = ["Programming Language :: Rust", "Programming Language :: Python :: Implementation :: CPython"]
+
 [tool.maturin]
+# Mixed layout: Rust extension is installed as viewfinder_core._native,
+# python/viewfinder_core/ supplies __init__.py + type stubs.
 python-source = "python"
-exclude = [
-    "**/__pycache__",
-    "**/*.pyc",
-    "**/*.pyo"
-]
 module-name = "viewfinder_core._native"
 features = ["pyo3/extension-module"]
 
 [tool.uv]
+# When this package is a path dependency (backend/), uv caches the built wheel.
+# Rebuild it whenever Rust sources change, otherwise `uv sync` reuses a stale build.
 cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "src/**/*.rs" }]

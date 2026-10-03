@@ -1,0 +1,22 @@
+#!/bin/sh
+# Jupyter kernel launcher installed as /usr/local/bin/viewfinder-kernel by provision.sh.
+# Runs the backend venv of whichever user starts the kernel, so one shared kernelspec
+# serves everyone. Looks in ~/viewfinder first, then the old ~/viewfinder-scaffold clone.
+# Set VIEWFINDER_VENV to use only that location.
+if [ -n "${VIEWFINDER_VENV:-}" ]; then
+    CANDIDATES="$VIEWFINDER_VENV"
+else
+    CANDIDATES="$HOME/viewfinder/backend/.venv $HOME/viewfinder-scaffold/backend/.venv"
+fi
+
+for VENV in $CANDIDATES; do
+    if [ -x "$VENV/bin/python" ]; then
+        exec "$VENV/bin/python" -Xfrozen_modules=off -m ipykernel_launcher "$@"
+    fi
+done
+
+# No venv yet: start a plain kernel whose every cell raises an error explaining the fix,
+# instead of a kernel that dies with the reason hidden in the server log.
+export VIEWFINDER_MISSING_VENV="$CANDIDATES"
+exec /opt/tljh/user/bin/python -m ipykernel_launcher "$@" \
+    --IPKernelApp.exec_files=/usr/local/share/viewfinder-kernel/missing_venv.py
