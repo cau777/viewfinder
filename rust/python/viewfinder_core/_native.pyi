@@ -2,69 +2,95 @@
 Native core of viewfinder (Rust, via PyO3).
 """
 
+from os import PathLike
 from typing import Final, final
 __version__: Final[str]
 
 @final
-class ByteBuffer:
+class GridStats:
     """
-    A fixed-capacity byte buffer owned by Rust.
-    
-    Feed it Python objects with `push()`; inspect it with `summary()`.
+    Shape and memory use of the loaded tree, returned by `RayTracer.stats()`.
     """
-    def __len__(self, /) -> int: ...
-    def __new__(cls, /, capacity: int = 1024) -> ByteBuffer:
-        """
-        ByteBuffer(capacity=1024)
-        """
     def __repr__(self, /) -> str: ...
     @property
-    def capacity(self, /) -> int: ...
-    def clear(self, /) -> None: ...
-    def push(self, /, chunk: "str | bytes | bytearray | list[int]") -> int:
+    def empty_slots_per_level(self, /) -> list[int]:
         """
-        Append a Python object to the buffer and return the new length.
-        
-        Accepts `str` (UTF-8 encoded), `bytes`, `bytearray`, or any iterable
-        of ints in 0..=255 (e.g. `list[int]`, `memoryview`).
+        Child slots per level that are None because the whole subtree has no points.
         """
-    def summary(self, /, preview: int = 16) -> Summary:
+    @property
+    def nodes_per_level(self, /) -> list[int]:
         """
-        Describe the buffer contents. `preview` caps how many bytes appear in `hex_preview`.
+        Nodes per tree level, root first; the last level holds the 3x3-point leaves.
         """
-    def to_bytes(self, /) -> bytes:
+    @property
+    def points_missing_in_leaves(self, /) -> int:
         """
-        Copy the buffer out as Python `bytes`.
+        Points without data inside non-empty leaves.
+        """
+    @property
+    def points_present(self, /) -> int:
+        """
+        Points with an altitude.
+        """
+    @property
+    def tree_bytes(self, /) -> int:
+        """
+        Approximate heap bytes used by the tree.
         """
 
 @final
-class Summary:
-    """
-    Snapshot of a ByteBuffer, returned by `ByteBuffer.summary()`.
-    """
+class RayTracer:
+    def __new__(cls, /, path: str |PathLike[str]) -> RayTracer:
+        """
+        RayTracer(path)
+        
+        Loads the u16 LiDAR export (a directory with `index.csv` and `<NAME>.u16` files).
+        """
     def __repr__(self, /) -> str: ...
     @property
-    def capacity(self, /) -> int:
+    def alt_range(self, /) -> tuple[float, float]:
         """
-        Maximum number of bytes the buffer accepts.
+        Altitude range (metres) of the whole dataset.
         """
-    @property
-    def checksum(self, /) -> int:
+    def altitude(self, /, row: int, column: int) -> float |None:
         """
-        Adler-32 checksum of the contents.
+        Altitude in metres of the point at (row, column), None if it has no data.
         """
-    @property
-    def hex_preview(self, /) -> str:
+    def altitude_at(self, /, x: float, y: float) -> float |None:
         """
-        Space-separated hex of the first `preview` bytes.
+        Altitude in metres of the point nearest to UTM (x, y), None if it has no data.
         """
     @property
-    def histogram_top(self, /) -> list[tuple[int, int]]:
+    def cell_size(self, /) -> float:
         """
-        Up to 5 most frequent `(byte, count)` pairs, most frequent first.
+        Distance between neighbouring points, in metres.
         """
     @property
-    def length(self, /) -> int:
+    def columns(self, /) -> int:
         """
-        Bytes currently stored.
+        Number of point columns (west to east).
+        """
+    @property
+    def depth(self, /) -> int:
+        """
+        Levels in the tree, including the leaf level.
+        """
+    @property
+    def rows(self, /) -> int:
+        """
+        Number of point rows (north to south).
+        """
+    def stats(self, /) -> GridStats:
+        """
+        Walk the tree and count nodes, points and memory.
+        """
+    @property
+    def x_start(self, /) -> float:
+        """
+        UTM (EPSG:26910) x of the most NW point.
+        """
+    @property
+    def y_start(self, /) -> float:
+        """
+        UTM (EPSG:26910) y of the most NW point.
         """
