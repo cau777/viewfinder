@@ -1,30 +1,17 @@
-//! viewfinder-core: a tiny PyO3 extension.
-//!
-//! `ByteBuffer` is a Rust struct that *owns* a `Vec<u8>`. Python constructs it
-//! (`ByteBuffer(capacity=...)`) and feeds it arbitrary Python objects via
-//! `push(...)`, which are converted to bytes on the Rust side.
+pub mod grid;
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyString};
 
-// NOTE: `///` doc comments on Python-visible items become Python docstrings
-// (and end up in the generated .pyi), so write them for Python users.
-// Use `//` for implementation notes.
-
-/// A fixed-capacity byte buffer owned by Rust.
-///
-/// Feed it Python objects with `push()`; inspect it with `summary()`.
-// The plain `impl` block below holds pure-Rust logic, unit-tested with
-// `cargo test` (no interpreter needed).
 #[pyclass(module = "viewfinder_core._native")]
 #[derive(Debug)]
-pub struct ByteBuffer {
+pub struct RayTracer {
     data: Vec<u8>,
     capacity: usize,
 }
 
-impl ByteBuffer {
+impl RayTracer {
     pub fn with_capacity(capacity: usize) -> Self {
         Self { data: Vec::with_capacity(capacity), capacity }
     }
@@ -77,40 +64,12 @@ impl ByteBuffer {
     }
 }
 
-/// Snapshot of a ByteBuffer, returned by `ByteBuffer.summary()`.
-// A typed class (instead of a dict) so stub generation can infer every field's type.
-#[pyclass(module = "viewfinder_core._native", frozen, get_all, skip_from_py_object)]
-#[derive(Debug, Clone)]
-pub struct Summary {
-    /// Bytes currently stored.
-    pub length: usize,
-    /// Maximum number of bytes the buffer accepts.
-    pub capacity: usize,
-    /// Adler-32 checksum of the contents.
-    pub checksum: u32,
-    /// Space-separated hex of the first `preview` bytes.
-    pub hex_preview: String,
-    /// Up to 5 most frequent `(byte, count)` pairs, most frequent first.
-    pub histogram_top: Vec<(u8, usize)>,
-}
-
 #[pymethods]
-impl Summary {
-    fn __repr__(&self) -> String {
-        format!(
-            "Summary(length={}, capacity={}, checksum={:#010x})",
-            self.length, self.capacity, self.checksum
-        )
-    }
-}
-
-#[pymethods]
-impl ByteBuffer {
-    /// ByteBuffer(capacity=1024)
+impl RayTracer {
     #[new]
-    #[pyo3(signature = (capacity = 1024))]
-    fn py_new(capacity: usize) -> Self {
-        Self::with_capacity(capacity)
+    // #[pyo3(signature = (capacity = 1024))]
+    fn py_new(path: String) -> Self {
+
     }
 
     /// Append a Python object to the buffer and return the new length.
@@ -184,7 +143,7 @@ impl ByteBuffer {
 #[pymodule]
 mod _native {
     #[pymodule_export]
-    use super::{ByteBuffer, Summary};
+    use super::{RayTracer, Summary};
 
     #[allow(non_upper_case_globals)]
     #[pymodule_export]
@@ -195,25 +154,5 @@ mod _native {
 mod tests {
     use super::*;
 
-    #[test]
-    fn extend_respects_capacity() {
-        let mut b = ByteBuffer::with_capacity(4);
-        assert_eq!(b.extend(b"abc"), Ok(3));
-        assert!(b.extend(b"de").is_err());
-        assert_eq!(b.data, b"abc");
-    }
 
-    #[test]
-    fn adler32_known_value() {
-        let mut b = ByteBuffer::with_capacity(64);
-        b.extend(b"Wikipedia").unwrap();
-        assert_eq!(b.checksum(), 0x11E6_0398);
-    }
-
-    #[test]
-    fn histogram_orders_by_count() {
-        let mut b = ByteBuffer::with_capacity(64);
-        b.extend(b"aabbbc").unwrap();
-        assert_eq!(b.histogram_top(2), vec![(b'b', 3), (b'a', 2)]);
-    }
 }

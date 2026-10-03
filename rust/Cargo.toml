@@ -11,8 +11,11 @@ name = "viewfinder_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+array2d = "0.3.2"
+half = "2.7.1"
 # abi3-py310: one wheel works on every CPython >= 3.10 (see DEPLOYMENT.md)
 pyo3 = { version = "0.29", features = ["abi3-py310", "experimental-inspect"] }
+serde = "1.0.229"
 
 [profile.release]
 lto = "thin"
