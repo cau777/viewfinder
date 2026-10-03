@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Rust build output
+target/
+rust/python/viewfinder_core/*.so
+rust/python/viewfinder_core/*.pyd
+
+# Node / frontend build
+node_modules/
+dist/
+dist-ssr/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.sw?
