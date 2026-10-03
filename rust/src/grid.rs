@@ -3,6 +3,7 @@ use std::sync::Arc;
 use array2d::Array2D;
 use crate::grid::CellContents::Subcells;
 
+#[derive(Debug)]
 pub struct FullGrid {
     first_parcel_lat: f64,
     first_parcel_lon: f64,
@@ -19,7 +20,7 @@ pub struct FullGrid {
 type PointGrid = [[u16; 3]; 3];
 
 /// Recursive struct for representing structs in the hierarchy of 9x9 cells
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CellContents {
     Points {
         points: PointGrid,
