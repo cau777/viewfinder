@@ -1,10 +1,10 @@
+use crate::grid::CellContents::{Points, Subcells};
+use array2d::Array2D;
+use serde::Deserialize;
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
-use array2d::Array2D;
-use serde::Deserialize;
-use crate::grid::CellContents::{Points, Subcells};
 
 /// Value the u16 export uses for points without any LiDAR return.
 pub const MISSING: u16 = u16::MAX;
@@ -64,7 +64,10 @@ fn indices(rows: usize, columns: usize) -> impl Iterator<Item = (usize, usize)> 
 ///
 /// Builds the tree bottom-up: 3x3 points form a leaf, 3x3 leaves form a cell, 3x3 cells the next
 /// level, until a single cell remains. Returns the root and the depth of the tree.
-pub fn make_cells(parcels: &Array2D<Option<Parcel>>, resolution: usize) -> (Option<Arc<CellContents>>, u32) {
+pub fn make_cells(
+    parcels: &Array2D<Option<Parcel>>,
+    resolution: usize,
+) -> (Option<Arc<CellContents>>, u32) {
     let rows = parcels.num_rows() * resolution;
     let columns = parcels.num_columns() * resolution;
     let point = |row: usize, column: usize| -> u16 {
@@ -94,16 +97,25 @@ pub fn make_cells(parcels: &Array2D<Option<Parcel>>, resolution: usize) -> (Opti
 
     // Group 3x3 cells into a parent until the final grid cell is a single cell
     while cells.num_rows() > 1 || cells.num_columns() > 1 {
-        let (new_rows, new_columns) = (cells.num_rows().div_ceil(3), cells.num_columns().div_ceil(3));
+        let (new_rows, new_columns) = (
+            cells.num_rows().div_ceil(3),
+            cells.num_columns().div_ceil(3),
+        );
         let parents = indices(new_rows, new_columns).map(|(cell_row, cell_column)| {
             let mut sub: SubcellGrid = Default::default();
             for (dr, sub_row) in sub.iter_mut().enumerate() {
                 for (dc, child) in sub_row.iter_mut().enumerate() {
-                    *child = cells.get_mut(cell_row * 3 + dr, cell_column * 3 + dc).and_then(Option::take);
+                    *child = cells
+                        .get_mut(cell_row * 3 + dr, cell_column * 3 + dc)
+                        .and_then(Option::take);
                 }
             }
             let empty = sub.iter().flatten().all(Option::is_none);
-            (!empty).then(|| Arc::new(Subcells { cells: Box::new(sub) }))
+            (!empty).then(|| {
+                Arc::new(Subcells {
+                    cells: Box::new(sub),
+                })
+            })
         });
         let new_cells = Array2D::from_iter_row_major(parents, new_rows, new_columns).unwrap();
         cells = new_cells;
@@ -126,32 +138,59 @@ impl FullGrid {
     /// Loads the u16 export (a directory with index.csv and one `<NAME>.u16` file per parcel).
     pub fn load(dir: &Path) -> io::Result<FullGrid> {
         let rows = read_index(&dir.join("index.csv"))?;
-        let first = rows.first().ok_or_else(|| invalid("index.csv has no parcels"))?;
+        let first = rows
+            .first()
+            .ok_or_else(|| invalid("index.csv has no parcels"))?;
         let resolution = first.width;
-        if rows.iter().any(|r| r.width != resolution || r.height != resolution) {
-            return Err(invalid("all parcels must be square with the same resolution"));
+        if rows
+            .iter()
+            .any(|r| r.width != resolution || r.height != resolution)
+        {
+            return Err(invalid(
+                "all parcels must be square with the same resolution",
+            ));
         }
-        if rows.iter().any(|r| r.alt_min != first.alt_min || r.alt_max != first.alt_max) {
+        if rows
+            .iter()
+            .any(|r| r.alt_min != first.alt_min || r.alt_max != first.alt_max)
+        {
             return Err(invalid("parcels have different altitude ranges; expected the u16 export with a global range"));
         }
         let cell_size = (first.x_end - first.x_start) / (resolution - 1) as f64;
         let parcel_size = cell_size * resolution as f64;
 
         let x_start = rows.iter().map(|r| r.x_start).fold(f64::INFINITY, f64::min);
-        let y_start = rows.iter().map(|r| r.y_start).fold(f64::NEG_INFINITY, f64::max);
+        let y_start = rows
+            .iter()
+            .map(|r| r.y_start)
+            .fold(f64::NEG_INFINITY, f64::max);
         let slot = |r: &IndexRow| {
-            (((y_start - r.y_start) / parcel_size).round() as usize, ((r.x_start - x_start) / parcel_size).round() as usize)
+            (
+                ((y_start - r.y_start) / parcel_size).round() as usize,
+                ((r.x_start - x_start) / parcel_size).round() as usize,
+            )
         };
         let parcel_rows = rows.iter().map(|r| slot(r).0).max().unwrap() + 1;
         let parcel_columns = rows.iter().map(|r| slot(r).1).max().unwrap() + 1;
 
-        let mut parcels: Array2D<Option<Parcel>> = Array2D::filled_by_row_major(|| None, parcel_rows, parcel_columns);
+        let mut parcels: Array2D<Option<Parcel>> =
+            Array2D::filled_by_row_major(|| None, parcel_rows, parcel_columns);
         for r in &rows {
             let bytes = fs::read(dir.join(&r.file))?;
             if bytes.len() != resolution * resolution * 2 {
-                return Err(invalid(&format!("{}: expected {} bytes, got {}", r.file, resolution * resolution * 2, bytes.len())));
+                return Err(invalid(&format!(
+                    "{}: expected {} bytes, got {}",
+                    r.file,
+                    resolution * resolution * 2,
+                    bytes.len()
+                )));
             }
-            let values: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|&b| u16::from_le_bytes(b)).collect();
+            let values: Vec<u16> = bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&b| u16::from_le_bytes(b))
+                .collect();
             let (parcel_row, parcel_column) = slot(r);
             parcels[(parcel_row, parcel_column)] = Some(Parcel {
                 x_start: r.x_start,
@@ -191,10 +230,18 @@ impl FullGrid {
         }
     }
 
+    pub fn decompress_altitude(&self, p: u16) -> Option<f64> {
+        if p == MISSING {
+            None
+        } else {
+            Some(self.alt_min + p as f64 / (MISSING - 1) as f64 * (self.alt_max - self.alt_min))
+        }
+    }
+
     /// Altitude in metres of a point, None if it has no data or is outside the grid.
     pub fn altitude(&self, row: usize, column: usize) -> Option<f64> {
         self.point(row, column)
-            .map(|p| self.alt_min + p as f64 / (MISSING - 1) as f64 * (self.alt_max - self.alt_min))
+            .and_then(|p| self.decompress_altitude(p))
     }
 
     /// Altitude of the point nearest to UTM coordinates (x, y).
@@ -258,7 +305,9 @@ fn invalid(msg: &str) -> io::Error {
 
 fn read_index(path: &Path) -> io::Result<Vec<IndexRow>> {
     // Columns not in IndexRow (name, crs, lat/lon, ...) are ignored
-    let rows = csv::Reader::from_path(path)?.deserialize().collect::<Result<Vec<IndexRow>, _>>()?;
+    let rows = csv::Reader::from_path(path)?
+        .deserialize()
+        .collect::<Result<Vec<IndexRow>, _>>()?;
     Ok(rows)
 }
 
@@ -272,12 +321,20 @@ mod tests {
         let mut parcels = Array2D::filled_by_row_major(|| None, 2, 3);
         for (pr, pc) in indices(2, 3).filter(|&p| p != (1, 1)) {
             let points = Array2D::filled_by_row_major(|| 0, resolution, resolution);
-            parcels[(pr, pc)] = Some(Parcel { x_start: pc as f64, y_start: -(pr as f64), points });
+            parcels[(pr, pc)] = Some(Parcel {
+                x_start: pc as f64,
+                y_start: -(pr as f64),
+                points,
+            });
             let parcel = parcels[(pr, pc)].as_mut().unwrap();
             for (r, c) in indices(resolution, resolution) {
                 let (gr, gc) = (pr * resolution + r, pc * resolution + c);
                 // One missing point inside a parcel too
-                parcel.points[(r, c)] = if (gr, gc) == (0, 1) { MISSING } else { (gr * 100 + gc) as u16 };
+                parcel.points[(r, c)] = if (gr, gc) == (0, 1) {
+                    MISSING
+                } else {
+                    (gr * 100 + gc) as u16
+                };
             }
         }
         (parcels, resolution)
@@ -286,9 +343,15 @@ mod tests {
     fn grid_from(parcels: &Array2D<Option<Parcel>>, resolution: usize) -> FullGrid {
         let (contents, depth) = make_cells(parcels, resolution);
         FullGrid {
-            x_start: 0.0, y_start: 0.0, cell_size: 1.0,
-            rows: parcels.num_rows() * resolution, columns: parcels.num_columns() * resolution,
-            depth, alt_min: 0.0, alt_max: (MISSING - 1) as f64, contents,
+            x_start: 0.0,
+            y_start: 0.0,
+            cell_size: 1.0,
+            rows: parcels.num_rows() * resolution,
+            columns: parcels.num_columns() * resolution,
+            depth,
+            alt_min: 0.0,
+            alt_max: (MISSING - 1) as f64,
+            contents,
         }
     }
 
@@ -325,7 +388,11 @@ mod tests {
     #[test]
     fn non_square_grid_reduces_to_one_root() {
         let mut parcels = Array2D::filled_by_row_major(|| None, 1, 5);
-        parcels[(0, 4)] = Some(Parcel { x_start: 0.0, y_start: 0.0, points: Array2D::filled_by_row_major(|| 7, 3, 3) });
+        parcels[(0, 4)] = Some(Parcel {
+            x_start: 0.0,
+            y_start: 0.0,
+            points: Array2D::filled_by_row_major(|| 7, 3, 3),
+        });
         let grid = grid_from(&parcels, 3);
         assert_eq!(grid.depth, 3); // 3x15 points -> 1x5 leaves -> 1x2 -> 1x1
         assert_eq!(grid.point(2, 14), Some(7));
