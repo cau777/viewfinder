@@ -5,6 +5,8 @@ SHELL := /bin/bash
 PORT    ?= 8000
 HOST    ?= 0.0.0.0
 WORKERS ?= 2
+PIDFILE ?= .viewfinder.pid
+LOGFILE ?= .viewfinder.log
 
 help: ## List targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -49,6 +51,13 @@ build: ## Production build: optimized Rust extension + static React bundle
 
 serve: ## Run the production single process (API + SPA) on $(HOST):$(PORT)
 	cd backend && uv run --no-sync uvicorn app.main:app --host $(HOST) --port $(PORT) --workers $(WORKERS) --proxy-headers
+
+restart: ## Rebuild the Rust extension (release) and (re)start the server in the background on 127.0.0.1:$(PORT)
+	cd backend && uv sync --quiet --reinstall-package viewfinder-core
+	-@[ -f $(PIDFILE) ] && kill $$(cat $(PIDFILE)) 2>/dev/null && sleep 1; rm -f $(PIDFILE)
+	(cd backend && exec nohup .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $(PORT) --workers $(WORKERS) --proxy-headers) \
+		> $(LOGFILE) 2>&1 & echo $$! > $(PIDFILE)
+	@echo "-> http://127.0.0.1:$(PORT) (pid $$(cat $(PIDFILE)), log $(LOGFILE))"
 
 wheel: ## Build a distributable viewfinder-core wheel into dist-wheels/
 	cd rust && uvx maturin build --release --out ../dist-wheels
