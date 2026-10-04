@@ -4,9 +4,13 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "astral>=3.2",
+    "contextily>=1.7.1",
+    "contextly>=1.1.1",
     "fastapi>=0.142",
     "geopandas>=1.1.4",
+    "huggingface-hub>=2.1.1",
     "kagglehub>=1.0.2",
+    "pyarrow>=25.0.1",
     "tqdm>=4.70.1",
     "uvicorn[standard]>=0.30",
     "viewfinder-core",
