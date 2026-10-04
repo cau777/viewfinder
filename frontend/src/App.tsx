@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import AddressSearch from './AddressSearch'
+import HelpModal from './HelpModal'
 import Panorama from './Panorama'
 import PanoramaDescription from './PanoramaDescription'
 import ViewDetails, { ViewSummary } from './ViewDetails'
@@ -35,6 +36,7 @@ export default function App() {
   const marker = useRef<L.Marker | null>(null)
   const viewLayer = useRef<L.LayerGroup | null>(null)
   const [satellite, setSatellite] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [point, setPoint] = useState<Coordinates | null>(null)
   const [view, setView] = useState<View | null>(null)
   const [loading, setLoading] = useState(false)
@@ -129,7 +131,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="navbar">
-        <a className="brand" href="/" aria-label="ViewFinder home"><span className="brand-icon">⌖</span>ViewFinder<span className="brand-dot">.</span></a>
+        <a className="brand" href="/" aria-label="ViewFinder home">ViewFinder</a>
         <AddressSearch onSelect={location => {
           if (!map.current) return
           const latlng = L.latLng(location.latitude, location.longitude)
@@ -138,7 +140,9 @@ export default function App() {
           map.current.setView(latlng, 16)
           setPoint({ latitude: location.latitude, longitude: location.longitude })
         }} />
+        <button type="button" className="help-button" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>Help</button>
       </header>
+      <HelpModal opened={helpOpen} onClose={() => setHelpOpen(false)} />
       <main className="map-shell">
         <div ref={container} className="map" aria-label="Interactive map of Vancouver. Click a location to discover its view." />
         {mapError && <div className="map-error" role="alert">{satellite ? 'Satellite imagery could not load. Check your connection or switch to the street map.' : 'Map tiles could not load. Check your connection and CARTO basemap key.'}</div>}

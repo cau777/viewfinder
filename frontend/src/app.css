@@ -8,8 +8,6 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--color-accent-2);out
 .app-shell{height:100dvh;display:flex;flex-direction:column}
 .navbar{height:82px;flex-shrink:0;padding:0 34px;display:flex;align-items:center;gap:32px;background:var(--color-background);border-bottom:1px solid #ffffff12;z-index:1001}
 .brand{display:flex;align-items:center;color:var(--color-text);text-decoration:none;font-size:25px;font-weight:700;letter-spacing:-1px}
-.brand-icon{display:grid;place-items:center;width:36px;height:36px;background:var(--color-accent);color:var(--color-background);border-radius:10px;margin-right:11px;font-size:30px;font-weight:400}
-.brand-dot{color:var(--color-accent)}
 .nav-tagline{font-size:12px;color:var(--color-muted);border-left:1px solid #ffffff1c;padding-left:30px}
 .city-label{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:12px}
 .status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--color-accent)}
@@ -179,3 +177,25 @@ h1{font-size:23px}
 .description-toggle{display:block;border:0;background:transparent;color:var(--color-accent);font:inherit;font-size:11px;padding:7px 0 0;cursor:pointer}
 .description-toggle:hover{text-decoration:underline}
 .description-toggle:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+
+.help-button{flex:none;padding:9px 17px;border:1px solid #ffffff20;border-radius:8px;background:var(--color-surface);color:var(--color-text);font-size:12px}
+.help-button:hover{border-color:var(--color-accent);background:var(--color-card)}
+.help-modal,.help-header{background:var(--color-surface);color:var(--color-text)}
+.help-modal{border:1px solid #ffffff15}
+.help-header{padding:20px 24px;border-bottom:1px solid #ffffff12}
+.help-title{font-size:22px;font-weight:500;letter-spacing:-.5px}
+.help-body{padding:24px}
+.help-body .help-intro{font-size:15px;color:var(--color-text);margin-top:0}
+.help-body p,.help-definitions dd{font-size:13px;line-height:1.8;color:var(--color-muted)}
+.help-body section{margin-top:28px}
+.help-body h2{font-size:17px;font-weight:500;letter-spacing:-.25px;margin:0 0 12px}
+.help-definitions{margin:0}.help-definitions>div{padding:12px 0;border-bottom:1px solid #ffffff0c}
+.help-definitions dt{font-size:12px;font-weight:500;color:var(--color-text);margin-bottom:5px}
+.help-definitions dd{margin:0}
+.help-table-wrap{overflow-x:auto}
+.help-score-table{width:100%;border-collapse:collapse;font-size:12px;line-height:1.6}
+.help-score-table caption{text-align:left;color:var(--color-muted);font-size:11px;padding-bottom:12px}
+.help-score-table th,.help-score-table td{text-align:left;padding:11px 9px;border-bottom:1px solid #ffffff12;vertical-align:top}
+.help-score-table thead{background:var(--color-card)}.help-score-table th{font-weight:500}.help-score-table td{color:var(--color-muted)}
+.help-done{display:block;margin:24px 0 0 auto;border:0;border-radius:8px;padding:10px 20px;background:var(--color-accent);color:var(--color-background);font-size:12px}
+@media(max-width:700px){.help-button{margin-left:auto}.help-header{padding:16px 18px}.help-body{padding:18px}.help-title{font-size:20px}}
