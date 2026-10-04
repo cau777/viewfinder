@@ -6,8 +6,24 @@ import { fetchView, type Coordinates, type View } from './api'
 
 const VANCOUVER: L.LatLngExpression = [49.2827, -123.1207]
 const pinIcon = L.divIcon({ className: 'viewfinder-pin', html: '<span></span>', iconSize: [32, 40], iconAnchor: [16, 40] })
+// Area covered by the LiDAR export (outer corners of its tiles, from index.csv): the map can't leave it
+const LIDAR_BOUNDS = L.latLngBounds([49.1937, -123.2750], [49.3197, -123.0137])
 const VIEW_STYLE: L.PolylineOptions = { color: '#FF6B6B', weight: 2, fillColor: '#FF6B6B', fillOpacity: 0.18 }
 const UNOBSTRUCTED_STYLE: L.CircleMarkerOptions = { radius: 2.5, color: '#FFD166', weight: 0, fillOpacity: 1 }
+
+/** Where a ray from `origin` towards `bearing` (degrees clockwise from north) leaves the LiDAR bounds.
+ * Latitude and longitude are treated as a flat grid scaled by cos(latitude), accurate over a city. */
+function toBoundsEdge(origin: Coordinates, bearing: number): L.LatLngTuple {
+  const radians = bearing * Math.PI / 180
+  const step = { latitude: Math.cos(radians), longitude: Math.sin(radians) / Math.cos(origin.latitude * Math.PI / 180) }
+  const toEdge = (from: number, delta: number, low: number, high: number) =>
+    delta > 0 ? (high - from) / delta : delta < 0 ? (low - from) / delta : Infinity
+  const t = Math.max(0, Math.min(
+    toEdge(origin.latitude, step.latitude, LIDAR_BOUNDS.getSouth(), LIDAR_BOUNDS.getNorth()),
+    toEdge(origin.longitude, step.longitude, LIDAR_BOUNDS.getWest(), LIDAR_BOUNDS.getEast()),
+  ))
+  return [origin.latitude + step.latitude * t, origin.longitude + step.longitude * t]
+}
 
 function formatDistance(metres: number) {
   return metres < 1000 ? `${Math.round(metres)} m` : `${(metres / 1000).toFixed(1)} km`
@@ -28,7 +44,11 @@ export default function App() {
 
   useEffect(() => {
     if (!container.current) return
-    const instance = L.map(container.current, { zoomControl: false }).setView(VANCOUVER, 13)
+    const instance = L.map(container.current, { zoomControl: false, maxBounds: LIDAR_BOUNDS, maxBoundsViscosity: 1 }).setView(VANCOUVER, 13)
+    // Can't zoom out past the whole LiDAR area
+    const fitMinZoom = () => instance.setMinZoom(instance.getBoundsZoom(LIDAR_BOUNDS))
+    fitMinZoom()
+    instance.on('resize', fitMinZoom)
     map.current = instance
     viewLayer.current = L.layerGroup().addTo(instance)
     instance.on('click', ({ latlng }: L.LeafletMouseEvent) => {
@@ -72,14 +92,15 @@ export default function App() {
     return () => controller.abort()
   }, [point, attempt])
 
-  // The visible area: one vertex per ray, where it hits the surface or, if nothing is in the way, at the average sightline
+  // The visible area: one vertex per ray, where it hits the surface or, if nothing is in the way, at the edge of the LiDAR area
   useEffect(() => {
     const layer = viewLayer.current
     if (!layer) return
     layer.clearLayers()
     if (!view) return
-    L.polygon(view.points.map(p => [p.latitude, p.longitude] as L.LatLngTuple), VIEW_STYLE).addTo(layer)
-    for (const p of view.points.filter(p => p.unobstructed)) L.circleMarker([p.latitude, p.longitude], UNOBSTRUCTED_STYLE).addTo(layer)
+    const vertices = view.points.map(p => p.unobstructed ? toBoundsEdge(view, p.bearing) : [p.latitude, p.longitude] as L.LatLngTuple)
+    L.polygon(vertices, VIEW_STYLE).addTo(layer)
+    view.points.forEach((p, i) => { if (p.unobstructed) L.circleMarker(vertices[i], UNOBSTRUCTED_STYLE).addTo(layer) })
   }, [view])
 
   const hits = view?.points.filter(p => !p.unobstructed) ?? []
@@ -123,7 +144,7 @@ export default function App() {
           <div className="panel-top"><span className="eyebrow">YOUR PERSPECTIVE</span><button className="close-button" onClick={closePanel} aria-label="Close location details">×</button></div>
           <div className="view-art" aria-hidden="true"><div className="sun" /><div className="mountain mountain-back" /><div className="mountain mountain-front" /><div className="water" /><span className="art-label">A PLACE TO PAUSE</span></div>
           <div className="panel-content"><div className="location-tag"><span className="status-dot" /> PINNED LOCATION</div><h2>{loading ? 'Finding your view…' : view ? `You can see ${formatDistance(view.average_distance)} around` : 'Your selected view'}</h2><p className="coordinates">{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</p>
-            <div aria-live="polite">{loading ? <div className="loading-state"><span className="spinner" /><p>Taking a look around.<br /><span>Your perspective is on its way.</span></p></div> : error ? <div role="alert"><p>{error}</p><button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button></div> : view && <><div className="description-heading"><span>↗</span><h3>From where you stand</h3></div><p className="description">The shaded area on the map is what you can see at eye level, {formatDistance(view.altitude - view.ground_altitude)} above the ground, before buildings, trees or terrain block the view.</p><dl className="view-stats"><div><dt>Eye altitude</dt><dd>{Math.round(view.altitude)} m</dd></div><div><dt>Average sightline</dt><dd>{formatDistance(view.average_distance)}</dd></div><div><dt>Farthest sightline</dt><dd>{formatDistance(Math.max(...hits.map(p => p.distance)))}</dd></div><div><dt>Open directions</dt><dd>{Math.round(unobstructedShare * 100)}%</dd></div></dl>{unobstructedShare > 0 && <p className="view-legend"><span className="legend-dot" />Nothing blocks the view in these directions; they are drawn at the average sightline.</p>}</>}</div>
+            <div aria-live="polite">{loading ? <div className="loading-state"><span className="spinner" /><p>Taking a look around.<br /><span>Your perspective is on its way.</span></p></div> : error ? <div role="alert"><p>{error}</p><button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button></div> : view && <><div className="description-heading"><span>↗</span><h3>From where you stand</h3></div><p className="description">The shaded area on the map is what you can see at eye level, {formatDistance(view.altitude - view.ground_altitude)} above the ground, before buildings, trees or terrain block the view.</p><dl className="view-stats"><div><dt>Eye altitude</dt><dd>{Math.round(view.altitude)} m</dd></div><div><dt>Average sightline</dt><dd>{formatDistance(view.average_distance)}</dd></div><div><dt>Farthest sightline</dt><dd>{formatDistance(Math.max(...hits.map(p => p.distance)))}</dd></div><div><dt>Open directions</dt><dd>{Math.round(unobstructedShare * 100)}%</dd></div></dl>{unobstructedShare > 0 && <p className="view-legend"><span className="legend-dot" />Nothing blocks the view in these directions; they extend to the edge of the LiDAR coverage.</p>}</>}</div>
           </div><div className="panel-footer">A different view is just a click away.<span>⌖</span></div>
         </aside>}
       </main>

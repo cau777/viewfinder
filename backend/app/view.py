@@ -7,7 +7,7 @@ from viewfinder_core import RayResult, RayTracer, latlon_to_utm, utm_to_latlon
 
 
 # Extra elevation of the observer above the surface at the point, metres (roughly eye level)
-OBSERVER_HEIGHT = 2.0
+OBSERVER_HEIGHT = 2.5
 
 
 class NoDataError(ValueError):
