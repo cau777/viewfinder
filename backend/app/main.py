@@ -34,7 +34,7 @@ def get_tracer() -> RayTracer:
 class ViewRequest(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-    bearings: int = Field(default=360, ge=4, le=3600, description="Number of rays around the observer")
+    bearings: int = Field(default=360*4, ge=4, le=3600, description="Number of rays around the observer")
 
 
 class ViewPoint(BaseModel):
