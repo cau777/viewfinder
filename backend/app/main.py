@@ -34,7 +34,6 @@ def get_tracer() -> RayTracer:
 class ViewRequest(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-    eye_height: float = Field(default=2.0, ge=0, le=100, description="Metres above the surface")
     bearings: int = Field(default=360, ge=4, le=3600, description="Number of rays around the observer")
 
 
@@ -60,7 +59,7 @@ def view(req: ViewRequest, tracer: Annotated[RayTracer, Depends(get_tracer)]) ->
     """The area visible from a position: where horizontal rays in every direction hit the surface.
     Rays that hit nothing are limited to the average sightline."""
     try:
-        result = compute_view(tracer, req.latitude, req.longitude, req.eye_height, req.bearings)
+        result = compute_view(tracer, req.latitude, req.longitude, req.bearings)
     except NoDataError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except NoObstructionError as exc:

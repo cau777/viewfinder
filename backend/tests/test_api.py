@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app, get_tracer
+from app.view import OBSERVER_HEIGHT
 from viewfinder_core import RayTracer, latlon_to_utm, utm_to_latlon
 
 client = TestClient(app)
@@ -54,7 +55,7 @@ def test_view_hits_the_wall_and_limits_the_sky_to_the_average():
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ground_altitude"] == pytest.approx(10.0, abs=0.01)
-    assert body["altitude"] == pytest.approx(12.0, abs=0.01)
+    assert body["altitude"] == pytest.approx(10.0 + OBSERVER_HEIGHT, abs=0.01)
 
     points = body["points"]
     assert [p["bearing"] for p in points] == [0, 45, 90, 135, 180, 225, 270, 315]

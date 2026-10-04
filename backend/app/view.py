@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from viewfinder_core import RayResult, RayTracer, latlon_to_utm, utm_to_latlon
 
 
+# Extra elevation of the observer above the surface at the point, metres (roughly eye level)
+OBSERVER_HEIGHT = 2.0
+
+
 class NoDataError(ValueError):
     """The LiDAR grid has no surface at the requested position."""
 
@@ -39,14 +43,14 @@ class View:
     """Where each ray ends, by bearing: the vertices of the visible area."""
 
 
-def compute_view(tracer: RayTracer, latitude: float, longitude: float, eye_height: float, bearings: int) -> View:
-    """Casts `bearings` horizontal rays (elevation 0) around an observer standing `eye_height` metres above
+def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings: int) -> View:
+    """Casts `bearings` horizontal rays (elevation 0) around an observer `OBSERVER_HEIGHT` metres above
     the surface at (latitude, longitude). Rays that hit nothing are limited to the average sightline."""
     x, y = latlon_to_utm(latitude, longitude)
     ground_altitude = tracer.altitude_at(x, y)
     if ground_altitude is None:
         raise NoDataError("No LiDAR data at this position")
-    altitude = ground_altitude + eye_height
+    altitude = ground_altitude + OBSERVER_HEIGHT
 
     columns = tracer.ray_collisions_around(x, y, altitude, 0.0, 0.0, 1, 0.0, 2 * math.pi, bearings)
     results = [column[0] for column in columns]  # one elevation angle per bearing
