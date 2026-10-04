@@ -4,7 +4,10 @@ import math
 from dataclasses import dataclass
 
 from viewfinder_core import RayResult, RayTracer, latlon_to_utm, utm_to_latlon
-
+from shapely.geometry import Polygon
+from analysis import analyze
+border_points = []
+nonborder_points = []
 
 # Extra elevation of the observer above the surface at the point, metres (roughly eye level)
 OBSERVER_HEIGHT = 2.5
@@ -43,7 +46,9 @@ class View:
     """Where each ray ends, by bearing: the vertices of the visible area."""
     farthest_distance: float
     unobstructed_share: float
-
+    polygon: Polygon
+    border_points: list[ViewPoint]
+    nonborder_points: list[ViewPoint]
 
 def thin_points(points: list[ViewPoint], minimum_distance: float = 0.5) -> list[ViewPoint]:
     """Drop nearby vertices, preserving open/blocked boundaries and at least one ray per degree.
@@ -71,6 +76,31 @@ def thin_points(points: list[ViewPoint], minimum_distance: float = 0.5) -> list[
     kept.append(points[-1])
     return kept if len(kept) >= 3 else points
 
+def compute_polygon(results, x, y, bearings, average_distance):
+    polygon_points = []  
+
+    for i, result in enumerate(results):
+        bearing = 360 * i / bearings
+
+        if isinstance(result, RayResult.Collision):
+            polygon_points.append(
+                (result.latitude, result.longitude)
+            )
+            nonborder_points.append((bearing, result.latitude, result.longitude))
+        else:
+            radians = math.radians(bearing)
+
+            end = utm_to_latlon(
+                x + average_distance * math.sin(radians),
+                y + average_distance * math.cos(radians)
+            )
+
+            polygon_points.append(end)
+            border_points.append((bearing, *end))
+
+    coordinates = [(long, lat) for lat, long in polygon_points]
+
+    return Polygon(coordinates)
 
 def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings: int) -> View:
     """Casts `bearings` horizontal rays (elevation 0) around an observer `OBSERVER_HEIGHT` metres above
@@ -88,6 +118,14 @@ def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings:
         raise NoObstructionError("No ray hits the surface around this position")
     average_distance = sum(distances) / len(distances)
 
+    polygon = compute_polygon(
+    results,
+    x,
+    y,
+    bearings,
+    average_distance
+)
+
     points = []
     for i, result in enumerate(results):
         bearing = 360 * i / bearings
@@ -99,5 +137,9 @@ def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings:
             end = utm_to_latlon(x + average_distance * math.sin(radians), y + average_distance * math.cos(radians))
             points.append(ViewPoint(bearing, *end, average_distance, True))
 
+    analyze(polygon, latitude, longitude, altitude, border_points, nonborder_points)
+
     return View(latitude, longitude, ground_altitude, altitude, average_distance,
-                thin_points(points), max(distances), (len(results) - len(distances)) / len(results))
+                thin_points(points), max(distances), (len(results) - len(distances)) / len(results), polygon, border_points, nonborder_points)
+
+
