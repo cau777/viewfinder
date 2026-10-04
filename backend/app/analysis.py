@@ -1,49 +1,34 @@
-from shapely.geometry import Polygon
-from features import sunrise, sunset, ocean_area, lake_area, get_landmarks, openness, sunrise_score, sunset_score
-from datetime import date
+"""Structured view analysis, independent of AI panorama descriptions."""
 
-date_ = date.today()
+import math
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-def analyze(polygon, lat, long, alt, border_points_, nonborder_points_):
-    sunrise_azimuth = sunrise(lat, long, alt, date_)
-    sunset_azimuth = sunset(lat, long, alt, date_)
-    sunrise_score_ = sunrise_score(border_points_, nonborder_points_, sunrise_azimuth[0]) 
-    sunset_score_ = sunset_score(border_points_, nonborder_points_, sunset_azimuth[0])
-    ocean_area_ = ocean_area(polygon)
-    lake_area_ = lake_area(polygon)
-    tot_water_area_ = ocean_area_ + lake_area_
+
+def analyze(polygon, lat, long, alt, border_points, nonborder_points):
+    # Geographic layers are optional on development machines. Import only when needed.
+    from .features import sunrise, sunset, ocean_area, lake_area, get_landmarks, openness, sunrise_score, sunset_score
+
+    today = datetime.now(ZoneInfo("America/Vancouver")).date()
+    rise = sunrise(lat, long, alt, today)
+    setting = sunset(lat, long, alt, today)
+    rise_share = sunrise_score(border_points, nonborder_points, rise[0]) / 100
+    set_share = sunset_score(border_points, nonborder_points, setting[0]) / 100
+    ocean = float(ocean_area(polygon))
+    lake = float(lake_area(polygon))
     landmarks = get_landmarks(polygon)
-    openness_ = openness(polygon)
-    #BEAUTY SCORE CALCULATION
-    openness_score = (
-        (openness_ - 1_000) / (3_500_000 - 1_000)
-    )
-    openness_score = max(0, min(1, openness_score))
-    openness_points = openness_score * 100
-    water_score = tot_water_area_ / 1_750_000
-    water_score = max(0, min(1, water_score))
-    water_points = water_score * 20
-    landmark_score = min(len(landmarks) / 5, 1)
-    landmark_points = landmark_score * 10
-    sunrise_points = sunrise_score_ * 10
-    sunset_points = sunset_score_ * 10
-    beauty_score = (
-        openness_points
-        + water_points
-        + landmark_points
-        + sunrise_points
-        + sunset_points
-    )
-    beauty_score = min(100, beauty_score)
-    print("Sunrise Azimuth:", sunrise_azimuth[0])
-    print("Sunset Azimuth:", sunset_azimuth[0])
-    print("Sunrise Score:", sunrise_score_)
-    print("Sunset Score:", sunset_score_)
-    print("Time of Sunrise:", sunrise_azimuth[1])
-    print("Time of Sunset:", sunset_azimuth[1])
-    print("Area of Ocean Interception:", ocean_area_)
-    print("Area of Lake Interception:", lake_area_)
-    print("Area of Total Water Interception:", tot_water_area_)
-    print("List of Visible Landmarks:", landmarks)
-    print("Openness:", openness_)
-    print("Beauty Score:", beauty_score)
+    area = float(openness(polygon))
+    score = min(100, max(0, min(1, (area - 1_000) / (3_500_000 - 1_000))) * 100
+                + max(0, min(1, (ocean + lake) / 1_750_000)) * 20
+                + min(len(landmarks) / 5, 1) * 10 + rise_share * 10 + set_share * 10)
+    return {
+        "date": today.isoformat(),
+        "beauty_score": score,
+        "sunrise": {"time": rise[1].isoformat(), "bearing": math.degrees(rise[0][1]) % 360, "open_share": rise_share},
+        "sunset": {"time": setting[1].isoformat(), "bearing": math.degrees(setting[0][1]) % 360, "open_share": set_share},
+        "ocean_area": ocean,
+        "lake_area": lake,
+        "water_area": ocean + lake,
+        "openness_area": area,
+        "landmarks": landmarks,
+    }

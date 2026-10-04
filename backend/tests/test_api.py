@@ -160,3 +160,32 @@ def test_thinning_keeps_sharp_distance_changes_and_open_angular_coverage():
     thinned = thin_points(open_points)
     assert len(thinned) == 361
     assert all(b.bearing - a.bearing <= 1 for a, b in zip(thinned, thinned[1:]))
+
+
+def test_view_returns_structured_analysis_without_backend_geometry(monkeypatch):
+    import app.view as view_module
+    analysis = {
+        "date": "2026-10-04", "beauty_score": 74.0,
+        "sunrise": {"time": "2026-10-04T07:15:00-07:00", "bearing": 102.0, "open_share": 0.18},
+        "sunset": {"time": "2026-10-04T18:45:00-07:00", "bearing": 258.0, "open_share": 0.82},
+        "ocean_area": 260000.0, "lake_area": 20000.0, "water_area": 280000.0,
+        "openness_area": 1120000.0, "landmarks": ["Test landmark"],
+    }
+    monkeypatch.setattr(view_module, "analyze", lambda *args: analysis)
+    response = post_view(*OBSERVER, bearings=8)
+    assert response.status_code == 200
+    assert response.json()["analysis"] == analysis
+    assert "polygon" not in response.json()
+
+
+def test_missing_analysis_layers_preserve_core_view(monkeypatch):
+    import app.view as view_module
+
+    def unavailable(*args):
+        raise FileNotFoundError("missing geographic layer")
+
+    monkeypatch.setattr(view_module, "analyze", unavailable)
+    response = post_view(*OBSERVER, bearings=8)
+    assert response.status_code == 200
+    assert response.json()["analysis"] is None
+    assert response.json()["farthest_distance"] > 0

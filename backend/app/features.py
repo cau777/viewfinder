@@ -5,11 +5,7 @@ from zoneinfo import ZoneInfo
 import geopandas as gpd
 from shapely.geometry import box
 from shapely.geometry import Point
-from huggingface_hub import hf_hub_download
-import pandas as pd
 import pathlib
-import matplotlib.pyplot as plt
-import contextily as ctx
 import math
 
 ### SUNRISE & SUNSET
@@ -85,7 +81,11 @@ def sunset_score(border_points, points, sunset_azimuth):
 ### OCEAN
 
 filename = "~/data/raw/world-internal-waters/eez_internal_waters_v4.gpkg"
-gdf = gpd.read_file(filename)
+# Report absent layers as ordinary filesystem errors, allowing core views to load.
+for layer in (filename, "~/data/raw/hydro/vancouver_lakes.gpkg", "~/data/raw/landmarks/van_landmarks.gpkg"):
+    if not pathlib.Path(layer).expanduser().is_file():
+        raise FileNotFoundError(f"Geographic analysis layer not found: {layer}")
+gdf = gpd.read_file(pathlib.Path(filename).expanduser())
 canada_gdf = gdf[gdf["SOVEREIGN1"] == "Canada"]
 canada_geo = canada_gdf.geometry
 van_box = box(-124, 49, -122, 49.5)
@@ -155,14 +155,3 @@ def get_landmarks(polygon):
 def openness(polygon):
     polygon = gpd.GeoSeries([polygon], crs="EPSG:4326").to_crs("EPSG:32610")
     return polygon.area.iloc[0]
-
-### PHOTOS
-
-osv5m_path = pathlib.Path(
-    "~/data/raw/photos/vancouver_osv5m.csv"
-).expanduser()
-
-osv5m_van = pd.read_csv(osv5m_path)
-osv5m_van = osv5m_van[["id", "latitude", "longitude"]]
-
-# print(osv5m_van[["latitude", "longitude"]])

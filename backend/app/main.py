@@ -12,7 +12,6 @@ from viewfinder_core import RayTracer
 from app.view import NoDataError, NoObstructionError, compute_view, panorama_png
 from app.description import DescriptionRequest, DescriptionResponse, describe_panorama
 
-from app.analysis import analyze
 
 app = FastAPI(title="viewfinder", version="0.1.0")
 
@@ -48,6 +47,24 @@ class ViewPoint(BaseModel):
     unobstructed: bool
 
 
+class SunResponse(BaseModel):
+    time: str
+    bearing: float
+    open_share: float
+
+
+class AnalysisResponse(BaseModel):
+    date: str
+    beauty_score: float
+    sunrise: SunResponse
+    sunset: SunResponse
+    ocean_area: float
+    lake_area: float
+    water_area: float
+    openness_area: float
+    landmarks: list[str]
+
+
 class ViewResponse(BaseModel):
     latitude: float
     longitude: float
@@ -57,6 +74,7 @@ class ViewResponse(BaseModel):
     farthest_distance: float
     unobstructed_share: float
     points: list[ViewPoint]
+    analysis: AnalysisResponse | None = None
 
 
 @app.post("/api/view", response_model=ViewResponse)
