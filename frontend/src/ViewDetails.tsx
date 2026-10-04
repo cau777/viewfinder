@@ -10,7 +10,7 @@ function SunCard({ title, sun }: { title: string; sun?: SunInfo }) {
   </div>
 }
 
-export default function ViewDetails({ view }: { view: View }) {
+export function ViewSummary({ view }: { view: View }) {
   const analysis = view.analysis
   const hits = view.points.filter(point => !point.unobstructed)
   const farthest = view.farthest_distance ?? hits.reduce((maximum, point) => Math.max(maximum, point.distance), 0)
@@ -25,6 +25,12 @@ export default function ViewDetails({ view }: { view: View }) {
       <p>{analysis ? 'Openness, water, landmarks & sunlight' : 'Analysis unavailable for this view.'}</p>
     </div>
     <dl className="view-stats"><div><dt>Farthest sightline</dt><dd>{distance(farthest)}</dd></div><div><dt>Open directions</dt><dd>{Math.round(open * 100)}%</dd></div></dl>
+  </>
+}
+
+export default function ViewDetails({ view }: { view: View }) {
+  const analysis = view.analysis
+  return <>
     <h3 className="view-section-heading">Sunrise & sunset</h3>
     <div className="sun-grid"><SunCard title="Sunrise" sun={analysis?.sunrise} /><SunCard title="Sunset" sun={analysis?.sunset} /></div>
     {analysis && <p className="analysis-date">{analysis.date} · Vancouver time</p>}
