@@ -7,6 +7,18 @@ export type ViewPoint = Coordinates & {
   /** The ray hit nothing; its distance is limited to the average sightline */
   unobstructed: boolean
 }
+export type SunInfo = { time: string; bearing: number; open_share: number }
+export type ViewAnalysis = {
+  date: string
+  beauty_score: number
+  sunrise: SunInfo
+  sunset: SunInfo
+  ocean_area: number
+  lake_area: number
+  water_area: number
+  openness_area: number
+  landmarks: string[]
+}
 export type View = Coordinates & {
   ground_altitude: number
   /** Altitude of the observer's eyes, metres */
@@ -18,6 +30,7 @@ export type View = Coordinates & {
   unobstructed_share?: number
   /** Where each ray around the observer ends: the vertices of the visible area */
   points: ViewPoint[]
+  analysis?: ViewAnalysis | null
 }
 
 export async function fetchView(point: Coordinates, signal: AbortSignal): Promise<View> {

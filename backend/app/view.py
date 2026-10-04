@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from viewfinder_core import RayResult, RayTracer, latlon_to_utm, utm_to_latlon
 from shapely.geometry import Polygon
-from analysis import analyze
+from .analysis import analyze
 
 # Extra elevation of the observer above the surface at the point, metres (roughly eye level)
 OBSERVER_HEIGHT = 2.5
@@ -53,6 +53,7 @@ class View:
     polygon: Polygon
     border_points: list[ViewPoint]
     nonborder_points: list[ViewPoint]
+    analysis: dict | None
 
 def thin_points(points: list[ViewPoint], minimum_distance: float = 0.5) -> list[ViewPoint]:
     """Drop nearby vertices, preserving open/blocked boundaries and at least one ray per degree.
@@ -149,10 +150,14 @@ def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings:
             end = utm_to_latlon(x + average_distance * math.sin(radians), y + average_distance * math.cos(radians))
             points.append(ViewPoint(bearing, *end, average_distance, True))
 
-    analyze(polygon, latitude, longitude, altitude, border_points, nonborder_points)
+    try:
+        analysis = analyze(polygon, latitude, longitude, altitude, border_points, nonborder_points)
+    except OSError:
+        # Missing geographic layers must not prevent the core view or panorama from loading.
+        analysis = None
 
     return View(latitude, longitude, ground_altitude, altitude, average_distance,
-                thin_points(points), max(distances), (len(results) - len(distances)) / len(results), polygon, border_points, nonborder_points)
+                thin_points(points), max(distances), (len(results) - len(distances)) / len(results), polygon, border_points, nonborder_points, analysis)
 
 
 def panorama_png(tracer: RayTracer, latitude: float, longitude: float) -> bytes:
