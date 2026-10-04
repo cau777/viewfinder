@@ -8,7 +8,7 @@ use nalgebra::Vector2;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use crate::grid::{CellContents, FullGrid, MISSING};
-use crate::ray_collisions::{ray_collisions, RayCastResult};
+use crate::ray_collisions::{ray_collisions, ray_collisions_around, RayCastResult};
 use crate::ray_tracing::get_intersection_points;
 
 #[pyclass(module = "viewfinder_core._native")]
@@ -31,6 +31,64 @@ pub struct GridStats {
     points_missing_in_leaves: usize,
     /// Approximate heap bytes used by the tree.
     tree_bytes: usize,
+}
+
+/// Where one ray of `RayTracer.ray_collisions_around()` ends. Horizontal angles are radians
+/// clockwise from north, elevation angles radians above the horizontal.
+#[pyclass(module = "viewfinder_core._native", frozen, skip_from_py_object)]
+#[derive(Debug, Clone)]
+pub enum RayResult {
+    /// The ray hit the surface.
+    Collision {
+        /// Distance travelled by the ray (along the slope), metres.
+        distance: f64,
+        /// Elevation angle of the ray, radians.
+        vertical_angle: f64,
+        /// Horizontal angle of the ray, radians clockwise from north.
+        horizontal_angle: f64,
+        /// Latitude of the centre of the point hit, degrees.
+        latitude: f64,
+        /// Longitude of the centre of the point hit, degrees.
+        longitude: f64,
+        /// Altitude of the ray where it hit, metres.
+        altitude_ray: f64,
+        /// Altitude of the surface at the point hit, metres.
+        altitude_at_collision: f64,
+    },
+    /// Pointing up and left the dataset without hitting anything.
+    Sky {},
+    /// Pointing down and left the dataset without hitting anything (no points over open water).
+    Ocean {},
+}
+
+impl From<RayCastResult> for RayResult {
+    fn from(result: RayCastResult) -> Self {
+        match result {
+            RayCastResult::Collision { distance, vertical_angle, horizontal_angle, coordinates, altitude_ray, altitude_at_collision } => {
+                RayResult::Collision {
+                    distance, vertical_angle, horizontal_angle,
+                    latitude: coordinates.latitude, longitude: coordinates.longitude,
+                    altitude_ray, altitude_at_collision,
+                }
+            }
+            RayCastResult::ProbablySky => RayResult::Sky {},
+            RayCastResult::ProbablyOcean => RayResult::Ocean {},
+        }
+    }
+}
+
+#[pymethods]
+impl RayResult {
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+fn check_elevations(min_elevation: f64, max_elevation: f64) -> PyResult<()> {
+    if min_elevation.is_nan() || max_elevation.is_nan() || min_elevation > max_elevation {
+        return Err(PyValueError::new_err("elevations must be numbers with min_elevation <= max_elevation"));
+    }
+    Ok(())
 }
 
 #[pymethods]
@@ -132,20 +190,49 @@ impl RayTracer {
         if direction.norm() == 0.0 || !direction.norm().is_finite() {
             return Err(PyValueError::new_err("direction must be a finite, non-zero vector"));
         }
-        if min_elevation.is_nan() || max_elevation.is_nan() || min_elevation > max_elevation {
-            return Err(PyValueError::new_err("elevations must be numbers with min_elevation <= max_elevation"));
-        }
+        check_elevations(min_elevation, max_elevation)?;
+        // Clockwise from north
+        let horizontal_angle = direction_x.atan2(direction_y);
         let results = ray_collisions(
-            &self.grid, Vector2::new(x, y), direction.normalize(), observer_altitude,
+            &self.grid, Vector2::new(x, y), horizontal_angle, observer_altitude,
             max_elevation, min_elevation, resolution,
         );
         Ok(results
             .into_iter()
             .map(|r| match r {
-                RayCastResult::Collision { distance } => distance,
+                RayCastResult::Collision { distance, .. } => distance,
                 RayCastResult::ProbablySky => f64::INFINITY,
                 RayCastResult::ProbablyOcean => f64::NEG_INFINITY,
             })
+            .collect())
+    }
+
+    /// ray_collisions_around(x, y, observer_altitude, min_elevation, max_elevation, vertical_resolution, min_horizontal_angle, max_horizontal_angle, horizontal_resolution)
+    ///
+    /// `ray_collisions` for `horizontal_resolution` horizontal angles (radians clockwise from north)
+    /// evenly spaced from `min_horizontal_angle` (included) to `max_horizontal_angle` (excluded), so
+    /// 0 to 2π is the full circle. Returns one list per horizontal angle, each with
+    /// `vertical_resolution` `RayResult`s from the lowest elevation to the highest.
+    #[allow(clippy::too_many_arguments)]
+    fn ray_collisions_around(
+        &self, x: f64, y: f64, observer_altitude: f64,
+        min_elevation: f64, max_elevation: f64, vertical_resolution: usize,
+        min_horizontal_angle: f64, max_horizontal_angle: f64, horizontal_resolution: usize,
+    ) -> PyResult<Vec<Vec<RayResult>>> {
+        check_elevations(min_elevation, max_elevation)?;
+        if !min_horizontal_angle.is_finite() || !max_horizontal_angle.is_finite() {
+            return Err(PyValueError::new_err("horizontal angles must be finite"));
+        }
+        if vertical_resolution == 0 {
+            return Ok(vec![vec![]; horizontal_resolution]);
+        }
+        let results = ray_collisions_around(
+            &self.grid, Vector2::new(x, y), observer_altitude, max_elevation, min_elevation,
+            vertical_resolution, min_horizontal_angle, max_horizontal_angle, horizontal_resolution,
+        );
+        Ok(results
+            .chunks(vertical_resolution)
+            .map(|column| column.iter().map(|&r| r.into()).collect())
             .collect())
     }
 
@@ -179,7 +266,7 @@ impl RayTracer {
 #[pymodule]
 mod _native {
     #[pymodule_export]
-    use super::{GridStats, RayTracer};
+    use super::{GridStats, RayResult, RayTracer};
 
     #[allow(non_upper_case_globals)]
     #[pymodule_export]

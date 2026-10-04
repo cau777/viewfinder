@@ -1,7 +1,8 @@
-use nalgebra::Vector2;
 use crate::grid::FullGrid;
 use crate::ray_collisions::RayCastResult::{Collision, ProbablyOcean, ProbablySky};
 use crate::ray_tracing::get_intersection_points;
+use crate::util::Coordinates;
+use nalgebra::Vector2;
 
 /// Mean Earth radius in metres.
 const EARTH_RADIUS: f64 = 6_371_000.0;
@@ -13,6 +14,18 @@ pub enum RayCastResult {
     Collision {
         /// Distance travelled by the ray (along the slope, not the horizontal), metres
         distance: f64,
+        /// Angle of elevation used to cast the ray, radians
+        vertical_angle: f64,
+        /// Horizontal direction of the ray, radians clockwise from north
+        horizontal_angle: f64,
+        /// Latitude and longitude of the centre of the point the ray hit
+        coordinates: Coordinates,
+        /// Altitude of the ray when it hit the object
+        /// Example: if the ray hit the third floor of a skyscraper, this would be the height of the third floor
+        altitude_ray: f64,
+        /// Max altitude at the point of collision.
+        /// Example: if the ray hit the third floor of a skyscraper, this would be the height of the skyscraper
+        altitude_at_collision: f64,
     },
     /// Pointing up and left the dataset without hitting anything
     ProbablySky,
@@ -31,17 +44,20 @@ fn curvature_drop(distance: f64) -> f64 {
 /// Returns one result per angle, lowest angle first. A ray hits the first point whose surface is at
 /// or above it.
 ///
-/// Angles are in radians and `min_elevation_angle <= max_elevation_angle`. Positions are UTM metres,
-/// `observer_direction` is normalized and `observer_altitude` uses the same datum as the grid.
+/// Angles are in radians and `min_elevation_angle <= max_elevation_angle`. `horizontal_angle` is
+/// clockwise from north (0 = north, π/2 = east). Positions are UTM metres and `observer_altitude`
+/// uses the same datum as the grid.
 pub fn ray_collisions(grid: &FullGrid,
                       observer_position: Vector2<f64>,
-                      observer_direction: Vector2<f64>,
+                      horizontal_angle: f64,
                       observer_altitude: f64,
                       max_elevation_angle: f64,
                       min_elevation_angle: f64,
                       resolution: usize
 ) -> Vec<RayCastResult> {
     debug_assert!(min_elevation_angle <= max_elevation_angle);
+    let observer_direction = Vector2::new(horizontal_angle.sin(), horizontal_angle.cos());
+
     // Sorted by distance, so the first point above a ray is where it collides
     let points = get_intersection_points(grid, observer_position, observer_direction);
     // A ray passing above a point also passes above it at every higher angle, so each angle
@@ -59,13 +75,50 @@ pub fn ray_collisions(grid: &FullGrid,
                     let distance = point.top_distance_to_observer;
                     let ray_altitude = observer_altitude + distance * slope;
                     if ray_altitude <= point_altitude - curvature_drop(distance) {
-                        return Collision { distance: distance / angle.cos() };
+                        return Collision {
+                            distance: distance / angle.cos(),
+                            vertical_angle: angle,
+                            horizontal_angle,
+                            coordinates: Coordinates::from_utm(point.position.x, point.position.y),
+                            altitude_ray: ray_altitude,
+                            altitude_at_collision: point_altitude,
+                        };
                     }
                 }
                 next_point += 1;
             }
 
             if angle < 0.0 { ProbablyOcean } else { ProbablySky }
+        })
+        .collect()
+}
+
+/// `ray_collisions` for `horizontal_resolution` horizontal angles evenly spaced from
+/// `min_horizontal_angle` (included) to `max_horizontal_angle` (excluded), so 0 to 2π goes the full
+/// circle without casting north twice. Returns `vertical_resolution` results per horizontal angle,
+/// horizontal angles first: result `i * vertical_resolution + j` is horizontal angle `i`, elevation `j`.
+///
+/// Horizontal angles are in radians clockwise from north: 0 is north, π/2 east, π south, 3π/2 west.
+pub fn ray_collisions_around(
+    grid: &FullGrid,
+    observer_position: Vector2<f64>,
+    observer_altitude: f64,
+    max_elevation_angle: f64,
+    min_elevation_angle: f64,
+    vertical_resolution: usize,
+    min_horizontal_angle: f64,
+    max_horizontal_angle: f64,
+    horizontal_resolution: usize,
+) -> Vec<RayCastResult> {
+    debug_assert!(min_elevation_angle <= max_elevation_angle);
+
+    (0..horizontal_resolution)
+        .flat_map(|i| {
+            let horizontal_angle = min_horizontal_angle
+                + (max_horizontal_angle - min_horizontal_angle) * i as f64
+                / horizontal_resolution as f64;
+
+            ray_collisions(grid, observer_position, horizontal_angle, observer_altitude, max_elevation_angle, min_elevation_angle, vertical_resolution)
         })
         .collect()
 }
@@ -87,12 +140,22 @@ mod tests {
             }
         }
         let mut parcels = Array2D::filled_by_row_major(|| None, 1, 1);
-        parcels[(0, 0)] = Some(Parcel { x_start: 0.0, y_start: 0.0, points });
+        parcels[(0, 0)] = Some(Parcel {
+            x_start: 0.0,
+            y_start: 0.0,
+            points,
+        });
         let (contents, depth) = make_cells(&parcels, resolution);
         FullGrid {
-            x_start: 0.0, y_start: 0.0, cell_size,
-            rows: resolution, columns: resolution,
-            depth, alt_min: 0.0, alt_max: (MISSING - 1) as f64, contents,
+            x_start: 0.0,
+            y_start: 0.0,
+            cell_size,
+            rows: resolution,
+            columns: resolution,
+            depth,
+            alt_min: 0.0,
+            alt_max: (MISSING - 1) as f64,
+            contents,
         }
     }
 
@@ -109,7 +172,16 @@ mod tests {
         grid_from(&vec![row; n], 0.5)
     }
 
-    const EAST: Vector2<f64> = Vector2::new(1.0, 0.0);
+    const EAST: f64 = std::f64::consts::FRAC_PI_2;
+
+    /// Distance of a collision, inf for the sky and -inf for the ocean
+    fn distance(result: RayCastResult) -> f64 {
+        match result {
+            Collision { distance, .. } => distance,
+            ProbablySky => f64::INFINITY,
+            ProbablyOcean => f64::NEG_INFINITY,
+        }
+    }
 
     #[test]
     fn one_result_per_angle_including_both_ends() {
@@ -117,8 +189,14 @@ mod tests {
         let observer = Vector2::new(0.0, -15.0);
         let results = ray_collisions(&grid, observer, EAST, 11.7, 0.5, -0.5, 7);
         assert_eq!(results.len(), 7);
-        assert_eq!(results[0], ray_collisions(&grid, observer, EAST, 11.7, -0.5, -0.5, 1)[0]);
-        assert_eq!(results[6], ray_collisions(&grid, observer, EAST, 11.7, 0.5, 0.5, 1)[0]);
+        assert_eq!(
+            results[0],
+            ray_collisions(&grid, observer, EAST, 11.7, -0.5, -0.5, 1)[0]
+        );
+        assert_eq!(
+            results[6],
+            ray_collisions(&grid, observer, EAST, 11.7, 0.5, 0.5, 1)[0]
+        );
     }
 
     #[test]
@@ -130,22 +208,41 @@ mod tests {
         let wall_entry: f64 = 40.0 * 0.5 - 0.25;
         let wall_top_angle = ((30.0 - observer_altitude) / wall_entry).atan();
 
-        let angles = [-0.3, -0.01, 0.0, wall_top_angle - 0.01, wall_top_angle + 0.05];
+        let angles = [
+            -0.3,
+            -0.01,
+            0.0,
+            wall_top_angle - 0.01,
+            wall_top_angle + 0.05,
+        ];
         for &angle in &angles {
-            let result = ray_collisions(&grid, observer, EAST, observer_altitude, angle, angle, 1)[0];
-            let expected = if angle < -0.05 {
+            let result =
+                ray_collisions(&grid, observer, EAST, observer_altitude, angle, angle, 1)[0];
+            let (expected, expected_altitude) = if angle < -0.05 {
                 // Hits the ground where the ray has dropped 1.7 m: first cell entered at or after that
                 let reach: f64 = 1.7 / -angle.tan();
                 let entry = ((reach + 0.25) / 0.5).ceil() * 0.5 - 0.25;
-                Collision { distance: entry / angle.cos() }
+                (entry / angle.cos(), 10.0)
             } else if angle < wall_top_angle {
-                Collision { distance: wall_entry / angle.cos() }
+                (wall_entry / angle.cos(), 30.0)
             } else {
-                ProbablySky
+                (f64::INFINITY, f64::NAN)
             };
-            match (result, expected) {
-                (Collision { distance: a }, Collision { distance: b }) => assert!((a - b).abs() < 1e-9, "angle {angle}: {a} vs {b}"),
-                _ => assert_eq!(result, expected, "angle {angle}"),
+            let got = distance(result);
+            if expected.is_finite() {
+                assert!((got - expected).abs() < 1e-9, "angle {angle}: {got} vs {expected}");
+                let Collision { vertical_angle, horizontal_angle, coordinates, altitude_ray, altitude_at_collision, .. } = result else {
+                    unreachable!()
+                };
+                assert_eq!((vertical_angle, horizontal_angle), (angle, EAST));
+                assert_eq!(altitude_at_collision, expected_altitude);
+                // The ray is at or below the surface where it hits, and the hit is the cell entered there
+                assert!(altitude_ray <= altitude_at_collision);
+                // The observer is on the centre line of a row, so the hit cell's centre is half a cell past the entry
+                let entry = observer.x + got * angle.cos();
+                assert_eq!(coordinates, Coordinates::from_utm(entry + 0.25, observer.y));
+            } else {
+                assert_eq!(result, ProbablySky, "angle {angle}");
             }
         }
     }
@@ -165,11 +262,23 @@ mod tests {
         let n = 45;
         let mut seed = 12345u64;
         let mut next = move || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as f64 / (1u64 << 31) as f64
         };
         let altitudes: Vec<Vec<Option<f64>>> = (0..n)
-            .map(|_| (0..n).map(|_| if next() < 0.1 { None } else { Some((next() * 40.0).floor()) }).collect())
+            .map(|_| {
+                (0..n)
+                    .map(|_| {
+                        if next() < 0.1 {
+                            None
+                        } else {
+                            Some((next() * 40.0).floor())
+                        }
+                    })
+                    .collect()
+            })
             .collect();
         let grid = grid_from(&altitudes, 0.5);
 
@@ -177,22 +286,55 @@ mod tests {
             let bearing = k as f64 * std::f64::consts::TAU / 16.0 + 0.1;
             let direction = Vector2::new(bearing.sin(), bearing.cos());
             let observer = Vector2::new(11.1, -10.6);
-            let results = ray_collisions(&grid, observer, direction, 25.0, 0.6, -0.6, 50);
+            let results = ray_collisions(&grid, observer, bearing, 25.0, 0.6, -0.6, 50);
             let points = get_intersection_points(&grid, observer, direction);
 
             for (i, result) in results.iter().enumerate() {
-                let angle = -0.6 + 1.2 * i as f64 / 49.0;
+                let angle = -0.6 + 1.2 * (i as f64 / 49.0);
                 let expected = points
                     .iter()
-                    .find(|p| p.altitude.is_some_and(|a| {
-                        25.0 + p.top_distance_to_observer * angle.tan() <= a - curvature_drop(p.top_distance_to_observer)
-                    }))
-                    .map_or(if angle < 0.0 { ProbablyOcean } else { ProbablySky }, |p| Collision {
-                        distance: p.top_distance_to_observer / angle.cos(),
-                    });
+                    .find(|p| {
+                        p.altitude.is_some_and(|a| {
+                            25.0 + p.top_distance_to_observer * angle.tan()
+                                <= a - curvature_drop(p.top_distance_to_observer)
+                        })
+                    })
+                    .map_or(
+                        if angle < 0.0 {
+                            ProbablyOcean
+                        } else {
+                            ProbablySky
+                        },
+                        |p| Collision {
+                            distance: p.top_distance_to_observer / angle.cos(),
+                            vertical_angle: angle,
+                            horizontal_angle: bearing,
+                            coordinates: Coordinates::from_utm(p.position.x, p.position.y),
+                            altitude_ray: 25.0 + p.top_distance_to_observer * angle.tan(),
+                            altitude_at_collision: p.altitude.unwrap(),
+                        },
+                    );
                 assert_eq!(*result, expected, "bearing {bearing}, angle {angle}");
             }
         }
+    }
+
+    #[test]
+    fn around_is_ray_collisions_per_horizontal_angle() {
+        let grid = wall_grid();
+        let observer = Vector2::new(14.0, -15.0);
+        let (vertical, horizontal) = (5, 8);
+        let results = ray_collisions_around(&grid, observer, 11.7, 1.4, -0.4, vertical, 0.0, std::f64::consts::TAU, horizontal);
+        assert_eq!(results.len(), vertical * horizontal);
+        for (i, chunk) in results.chunks(vertical).enumerate() {
+            // The max angle is excluded: 8 steps of 45° from north, never 360°
+            let horizontal_angle = i as f64 * std::f64::consts::TAU / horizontal as f64;
+            assert_eq!(chunk, ray_collisions(&grid, observer, horizontal_angle, 11.7, 1.4, -0.4, vertical));
+        }
+        // Index 2 is east, towards the wall 5.75 m away: the lowest ray hits the ground, the highest (80°) clears it
+        let east = &results[2 * vertical..3 * vertical];
+        assert!(matches!(east[0], Collision { horizontal_angle, .. } if horizontal_angle == EAST));
+        assert_eq!(east[vertical - 1], ProbablySky);
     }
 
     #[test]
@@ -200,10 +342,18 @@ mod tests {
         // 100 m cells: a 20 m tower 5 km away, observed level from 19 m.
         // Flat-Earth geometry would hit it, but it is ~1.7 m below the horizon at that distance.
         let n = 60;
-        let row: Vec<Option<f64>> = (0..n).map(|c| if c == 50 { Some(20.0) } else { Some(0.0) }).collect();
+        let row: Vec<Option<f64>> = (0..n)
+            .map(|c| if c == 50 { Some(20.0) } else { Some(0.0) })
+            .collect();
         let grid = grid_from(&vec![row; n], 100.0);
         let observer = Vector2::new(0.0, -1500.0);
-        assert_eq!(ray_collisions(&grid, observer, EAST, 19.0, 0.0, 0.0, 1)[0], ProbablySky);
-        assert!(matches!(ray_collisions(&grid, observer, EAST, 18.0, 0.0, 0.0, 1)[0], Collision { .. }));
+        assert_eq!(
+            ray_collisions(&grid, observer, EAST, 19.0, 0.0, 0.0, 1)[0],
+            ProbablySky
+        );
+        assert!(matches!(
+            ray_collisions(&grid, observer, EAST, 18.0, 0.0, 0.0, 1)[0],
+            Collision { .. }
+        ));
     }
 }
