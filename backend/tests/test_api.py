@@ -25,9 +25,15 @@ def tracer(tmp_path_factory) -> RayTracer:
     points = np.round(altitudes / 100 * 65534).astype("<u2")
     points[:, 50:] = 65535  # missing
     points.tofile(directory / "t.u16")
+    # ASPRS classes, two per byte (even points in the low nibble): ground, the wall is a building
+    classes = np.full((60, 60), 2, np.uint8)
+    classes[:, 40:45] = 6
+    classes[:, 50:] = 15  # missing
+    flat = classes.ravel()
+    (flat[0::2] | flat[1::2] << 4).astype(np.uint8).tofile(directory / "t.cls")
     (directory / "index.csv").write_text(
-        "file,width,height,x_start,y_start,x_end,alt_min,alt_max\n"
-        f"t.u16,60,60,{X_START},{Y_START},{X_START + 59 * CELL},0,100\n"
+        "file,classes_file,width,height,x_start,y_start,x_end,alt_min,alt_max\n"
+        f"t.u16,t.cls,60,60,{X_START},{Y_START},{X_START + 59 * CELL},0,100\n"
     )
     return RayTracer(directory)
 
@@ -74,6 +80,31 @@ def test_view_hits_the_wall_and_limits_the_sky_to_the_average():
         # Every vertex is `distance` away from the observer along its bearing (hits: centre of the point hit)
         x, y = latlon_to_utm(p["latitude"], p["longitude"])
         assert math.hypot(x - OBSERVER[0], y - OBSERVER[1]) == pytest.approx(p["distance"], abs=CELL)
+
+
+def test_collisions_carry_the_class_hit(tracer):
+    # Elevations -0.5 and 0 rad. Looking east (column 2 of 8) the horizontal ray hits the wall, a building;
+    # looking west the lower ray hits the ground.
+    columns = tracer.ray_collisions_around(*OBSERVER, 10.0 + OBSERVER_HEIGHT, -0.5, 0.0, 2, 0.0, 2 * math.pi, 8)
+    assert columns[2][1].classification == 6
+    assert columns[6][0].classification == 2
+
+
+def test_panorama_is_a_png_of_the_full_circle():
+    latitude, longitude = utm_to_latlon(*OBSERVER)
+    r = client.get("/api/panorama.png", params={"latitude": latitude, "longitude": longitude})
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/png"
+    png = r.content
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height = int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")
+    assert (width, height) == (360 * 4, 30 * 4)
+
+
+def test_panorama_without_data_is_404():
+    latitude, longitude = utm_to_latlon(X_START - 100, Y_START)
+    assert client.get("/api/panorama.png", params={"latitude": latitude, "longitude": longitude}).status_code == 404
+    assert client.get("/api/panorama.png", params={"latitude": 100, "longitude": 0}).status_code == 422
 
 
 def test_no_data_is_404():

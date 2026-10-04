@@ -49,8 +49,8 @@ class RayResult:
         """
         The ray hit the surface.
         """
-        __match_args__: Final = ("distance", "vertical_angle", "horizontal_angle", "latitude", "longitude", "altitude_ray", "altitude_at_collision")
-        def __new__(cls, /, distance: float, vertical_angle: float, horizontal_angle: float, latitude: float, longitude: float, altitude_ray: float, altitude_at_collision: float) -> RayResult.Collision: ...
+        __match_args__: Final = ("distance", "vertical_angle", "horizontal_angle", "latitude", "longitude", "altitude_ray", "altitude_at_collision", "classification")
+        def __new__(cls, /, distance: float, vertical_angle: float, horizontal_angle: float, latitude: float, longitude: float, altitude_ray: float, altitude_at_collision: float, classification: int |None) -> RayResult.Collision: ...
         @property
         def altitude_at_collision(self, /) -> float:
             """
@@ -60,6 +60,12 @@ class RayResult:
         def altitude_ray(self, /) -> float:
             """
             Altitude of the ray where it hit, metres.
+            """
+        @property
+        def classification(self, /) -> int |None:
+            """
+            ASPRS class of the point hit (2 ground, 5 high vegetation, 6 building, 9 water, ...),
+            None if the dataset has no classes.
             """
         @property
         def distance(self, /) -> float:
@@ -144,6 +150,15 @@ class RayTracer:
     def depth(self, /) -> int:
         """
         Levels in the tree, including the leaf level.
+        """
+    def panorama(self, /, x: float, y: float, observer_altitude: float, min_elevation: float, max_elevation: float, width: int, height: int) -> bytes:
+        """
+        panorama(x, y, observer_altitude, min_elevation, max_elevation, width, height)
+        
+        PNG of the full circle around UTM (x, y) at `observer_altitude` metres, coloured by what each ray
+        hits (its LiDAR class, faded with distance), sky or open water. Column 0 starts at north and
+        bearings grow clockwise, `width` columns per 360°; rows go from `max_elevation` at the top to
+        `min_elevation` at the bottom (radians).
         """
     def ray_collisions(self, /, x: float, y: float, direction_x: float, direction_y: float, observer_altitude: float, min_elevation: float, max_elevation: float, resolution: int) -> list[float]:
         """

@@ -2,14 +2,17 @@ pub mod grid;
 pub mod ray_tracing;
 pub mod util;
 pub mod ray_collisions;
+pub mod panorama;
 
 use std::path::PathBuf;
 use nalgebra::Vector2;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use crate::grid::{CellContents, FullGrid, MISSING};
 use crate::ray_collisions::{ray_collisions, ray_collisions_around, RayCastResult};
 use crate::ray_tracing::get_intersection_points;
+use crate::panorama::{encode_png, panorama};
 use crate::util::Coordinates;
 
 #[pyclass(module = "viewfinder_core._native")]
@@ -55,6 +58,9 @@ pub enum RayResult {
         altitude_ray: f64,
         /// Altitude of the surface at the point hit, metres.
         altitude_at_collision: f64,
+        /// ASPRS class of the point hit (2 ground, 5 high vegetation, 6 building, 9 water, ...),
+        /// None if the dataset has no classes.
+        classification: Option<u8>,
     },
     /// Pointing up and left the dataset without hitting anything.
     Sky {},
@@ -65,11 +71,11 @@ pub enum RayResult {
 impl From<RayCastResult> for RayResult {
     fn from(result: RayCastResult) -> Self {
         match result {
-            RayCastResult::Collision { distance, vertical_angle, horizontal_angle, coordinates, altitude_ray, altitude_at_collision } => {
+            RayCastResult::Collision { distance, vertical_angle, horizontal_angle, coordinates, altitude_ray, altitude_at_collision, class } => {
                 RayResult::Collision {
                     distance, vertical_angle, horizontal_angle,
                     latitude: coordinates.latitude, longitude: coordinates.longitude,
-                    altitude_ray, altitude_at_collision,
+                    altitude_ray, altitude_at_collision, classification: class,
                 }
             }
             RayCastResult::ProbablySky => RayResult::Sky {},
@@ -236,6 +242,28 @@ impl RayTracer {
             .chunks(vertical_resolution)
             .map(|column| column.iter().map(|&r| r.into()).collect())
             .collect())
+    }
+
+    /// panorama(x, y, observer_altitude, min_elevation, max_elevation, width, height)
+    ///
+    /// PNG of the full circle around UTM (x, y) at `observer_altitude` metres, coloured by what each ray
+    /// hits (its LiDAR class, faded with distance), sky or open water. Column 0 starts at north and
+    /// bearings grow clockwise, `width` columns per 360°; rows go from `max_elevation` at the top to
+    /// `min_elevation` at the bottom (radians).
+    #[allow(clippy::too_many_arguments)]
+    fn panorama<'py>(
+        &self, py: Python<'py>, x: f64, y: f64, observer_altitude: f64,
+        min_elevation: f64, max_elevation: f64, width: usize, height: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        check_elevations(min_elevation, max_elevation)?;
+        if !(1..=8192).contains(&width) || !(1..=4096).contains(&height) {
+            return Err(PyValueError::new_err("width must be 1..=8192 and height 1..=4096"));
+        }
+        let png = py.detach(|| {
+            let rgb = panorama(&self.grid, Vector2::new(x, y), observer_altitude, min_elevation, max_elevation, width, height);
+            encode_png(&rgb, width, height)
+        });
+        Ok(PyBytes::new(py, &png))
     }
 
     /// Walk the tree and count nodes, points and memory.

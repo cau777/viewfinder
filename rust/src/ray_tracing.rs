@@ -198,7 +198,7 @@ mod tests {
         FullGrid {
             x_start: 1000.25, y_start: 2000.25, cell_size: 0.5,
             rows: 3 * resolution, columns: 4 * resolution,
-            depth, alt_min: 0.0, alt_max: (MISSING - 1) as f64, contents,
+            depth, alt_min: 0.0, alt_max: (MISSING - 1) as f64, contents, classes: None,
         }
     }
 

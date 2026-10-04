@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import AddressSearch from './AddressSearch'
+import Panorama from './Panorama'
 import 'leaflet/dist/leaflet.css'
 import { fetchView, type Coordinates, type View } from './api'
 
@@ -114,6 +115,8 @@ export default function App() {
   const hits = view?.points.filter(p => !p.unobstructed) ?? []
   const unobstructedShare = view ? view.unobstructed_share ?? (view.points.length ? 1 - hits.length / view.points.length : 0) : 0
   const farthestDistance = view?.farthest_distance ?? hits.reduce((maximum, p) => Math.max(maximum, p.distance), 0)
+  // The panorama opens facing the longest sightline
+  const farthestBearing = hits.length ? hits.reduce((farthest, p) => p.distance > farthest.distance ? p : farthest).bearing : null
 
   function closePanel() {
     setPoint(null)
@@ -150,7 +153,7 @@ export default function App() {
         {!point && <div className="map-hint"><span className="hint-pin">⌖</span><div><span>Click anywhere on the map to analyze the gorgeous view at that location</span></div></div>}
         {point && <aside className="view-panel" aria-label="Selected location" aria-busy={loading}>
           <div className="panel-top"><span className="eyebrow">YOUR PERSPECTIVE</span><button className="close-button" onClick={closePanel} aria-label="Close location details">×</button></div>
-          <div className="view-art" aria-hidden="true"><div className="sun" /><div className="mountain mountain-back" /><div className="mountain mountain-front" /><div className="water" /><span className="art-label">A PLACE TO PAUSE</span></div>
+          <div className="view-art"><Panorama point={point} initialBearing={farthestBearing} fallback={<div aria-hidden="true"><div className="sun" /><div className="mountain mountain-back" /><div className="mountain mountain-front" /><div className="water" /><span className="art-label">A PLACE TO PAUSE</span></div>} /></div>
           <div className="panel-content"><div className="location-tag"><span className="status-dot" /> PINNED LOCATION</div><h2>{loading ? 'Finding your view…' : view ? `You can see ${formatDistance(view.average_distance)} around` : 'Your selected view'}</h2><p className="coordinates">{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</p>
             <div aria-live="polite">{loading ? <div className="loading-state"><span className="spinner" /><p>Taking a look around.<br /><span>Your perspective is on its way.</span></p></div> : error ? <div role="alert"><p>{error}</p><button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button></div> : view && <><div className="description-heading"><span>↗</span><h3>From where you stand</h3></div><p className="description">The shaded area on the map is what you can see at eye level, {formatDistance(view.altitude - view.ground_altitude)} above the ground, before buildings, trees or terrain block the view.</p><dl className="view-stats"><div><dt>Eye altitude</dt><dd>{Math.round(view.altitude)} m</dd></div><div><dt>Average sightline</dt><dd>{formatDistance(view.average_distance)}</dd></div><div><dt>Farthest sightline</dt><dd>{formatDistance(farthestDistance)}</dd></div><div><dt>Open directions</dt><dd>{Math.round(unobstructedShare * 100)}%</dd></div></dl>{unobstructedShare > 0 && <p className="view-legend"><span className="legend-dot" />Nothing blocks the view in these directions; they extend to the edge of the LiDAR coverage.</p>}</>}</div>
           </div><div className="panel-footer">A different view is just a click away.<span>⌖</span></div>

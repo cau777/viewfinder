@@ -54,3 +54,9 @@ export async function searchAddresses(query: string, signal: AbortSignal): Promi
     return [{ latitude, longitude, label: label || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }]
   })
 }
+
+/** PNG of the full circle around a point, coloured by what each ray hits. Starts at north and turns
+ * clockwise; the backend renders 4 pixels per degree, so its width covers 360° exactly. */
+export function panoramaUrl(point: Coordinates): string {
+  return `/api/panorama.png?${new URLSearchParams({ latitude: String(point.latitude), longitude: String(point.longitude) })}`
+}

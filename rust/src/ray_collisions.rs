@@ -26,6 +26,8 @@ pub enum RayCastResult {
         /// Max altitude at the point of collision.
         /// Example: if the ray hit the third floor of a skyscraper, this would be the height of the skyscraper
         altitude_at_collision: f64,
+        /// ASPRS class of the point hit (6 building, 9 water, ...), None if the export has no classes
+        class: Option<u8>,
     },
     /// Pointing up and left the dataset without hitting anything
     ProbablySky,
@@ -91,6 +93,7 @@ pub fn ray_collisions(grid: &FullGrid,
                             coordinates: Coordinates::from_utm(p.position.x, p.position.y),
                             altitude_ray: ray_altitude,
                             altitude_at_collision: point_altitude,
+                            class: grid.class_at(p.position.x, p.position.y),
                         };
                     }
                 }
@@ -176,6 +179,7 @@ mod tests {
             alt_min: 0.0,
             alt_max: (MISSING - 1) as f64,
             contents,
+            classes: None,
         }
     }
 
@@ -332,6 +336,7 @@ mod tests {
                             coordinates: Coordinates::from_utm(p.position.x, p.position.y),
                             altitude_ray: 25.0 + p.top_distance_to_observer * angle.tan(),
                             altitude_at_collision: p.altitude.unwrap(),
+                            class: None,
                         },
                     );
                 assert_eq!(*result, expected, "bearing {bearing}, angle {angle}");

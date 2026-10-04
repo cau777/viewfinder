@@ -3,13 +3,13 @@ import threading
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from viewfinder_core import RayTracer
-from app.view import NoDataError, NoObstructionError, compute_view
+from app.view import NoDataError, NoObstructionError, compute_view, panorama_png
 
 app = FastAPI(title="viewfinder", version="0.1.0")
 
@@ -67,6 +67,22 @@ def view(req: ViewRequest, tracer: Annotated[RayTracer, Depends(get_tracer)]) ->
     except NoObstructionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ViewResponse.model_validate(result, from_attributes=True)
+
+
+@app.get("/api/panorama.png", response_class=Response, responses={200: {"content": {"image/png": {}}}})
+def panorama(
+    latitude: Annotated[float, Query(ge=-90, le=90)],
+    longitude: Annotated[float, Query(ge=-180, le=180)],
+    tracer: Annotated[RayTracer, Depends(get_tracer)],
+) -> Response:
+    """The full circle seen from the same eye level as /api/view, coloured by LiDAR class (buildings,
+    vegetation, ground, water) and faded with distance. Starts at north and turns clockwise."""
+    try:
+        png = panorama_png(tracer, latitude, longitude)
+    except NoDataError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # The LiDAR does not change while the server runs
+    return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 
 # --- Production: serve the built React app from the same process ------------

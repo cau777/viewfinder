@@ -9,6 +9,12 @@ from viewfinder_core import RayResult, RayTracer, latlon_to_utm, utm_to_latlon
 # Extra elevation of the observer above the surface at the point, metres (roughly eye level)
 OBSERVER_HEIGHT = 2.5
 
+# The panorama covers every bearing, from a little below the horizon (nearby ground) to well above it
+# (skylines and hills), with square pixels so nothing is stretched
+PANORAMA_MIN_ELEVATION = -10  # degrees
+PANORAMA_MAX_ELEVATION = 20  # degrees
+PANORAMA_PIXELS_PER_DEGREE = 4
+
 
 class NoDataError(ValueError):
     """The LiDAR grid has no surface at the requested position."""
@@ -72,13 +78,19 @@ def thin_points(points: list[ViewPoint], minimum_distance: float = 0.5) -> list[
     return kept if len(kept) >= 3 else points
 
 
-def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings: int) -> View:
-    """Casts `bearings` horizontal rays (elevation 0) around an observer `OBSERVER_HEIGHT` metres above
-    the surface at (latitude, longitude). Rays that hit nothing are limited to the average sightline."""
+def observer_position(tracer: RayTracer, latitude: float, longitude: float) -> tuple[float, float, float]:
+    """UTM x, y and ground altitude of a position; the observer's eyes are `OBSERVER_HEIGHT` above it."""
     x, y = latlon_to_utm(latitude, longitude)
     ground_altitude = tracer.altitude_at(x, y)
     if ground_altitude is None:
         raise NoDataError("No LiDAR data at this position")
+    return x, y, ground_altitude
+
+
+def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings: int) -> View:
+    """Casts `bearings` horizontal rays (elevation 0) around an observer `OBSERVER_HEIGHT` metres above
+    the surface at (latitude, longitude). Rays that hit nothing are limited to the average sightline."""
+    x, y, ground_altitude = observer_position(tracer, latitude, longitude)
     altitude = ground_altitude + OBSERVER_HEIGHT
 
     columns = tracer.ray_collisions_around(x, y, altitude, 0.0, 0.0, 1, 0.0, 2 * math.pi, bearings)
@@ -101,3 +113,14 @@ def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings:
 
     return View(latitude, longitude, ground_altitude, altitude, average_distance,
                 thin_points(points), max(distances), (len(results) - len(distances)) / len(results))
+
+
+def panorama_png(tracer: RayTracer, latitude: float, longitude: float) -> bytes:
+    """PNG of the full circle seen by the same observer as `compute_view`, coloured by what each ray hits.
+    Starts at north and turns clockwise, `PANORAMA_PIXELS_PER_DEGREE` pixels per degree both ways."""
+    x, y, ground_altitude = observer_position(tracer, latitude, longitude)
+    return tracer.panorama(
+        x, y, ground_altitude + OBSERVER_HEIGHT,
+        math.radians(PANORAMA_MIN_ELEVATION), math.radians(PANORAMA_MAX_ELEVATION),
+        360 * PANORAMA_PIXELS_PER_DEGREE, (PANORAMA_MAX_ELEVATION - PANORAMA_MIN_ELEVATION) * PANORAMA_PIXELS_PER_DEGREE,
+    )

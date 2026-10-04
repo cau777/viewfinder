@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 /// Value the u16 export uses for points without any LiDAR return.
 pub const MISSING: u16 = u16::MAX;
+/// Value the 4-bit class export uses for points without any LiDAR return.
+pub const CLASS_MISSING: u8 = 15;
 
 #[derive(Debug)]
 pub struct FullGrid {
@@ -28,6 +30,29 @@ pub struct FullGrid {
 
     /// None if the dataset has no points at all.
     pub contents: Option<Arc<CellContents>>,
+
+    /// ASPRS class of each point, None if the export has no class files.
+    pub classes: Option<ClassGrid>,
+}
+
+/// The 4-bit classes of the `.cls` files, kept packed as loaded: two points per byte.
+/// Only looked up where rays hit, so a flat array per parcel is enough.
+#[derive(Debug)]
+pub struct ClassGrid {
+    /// Points per parcel side.
+    pub resolution: usize,
+    /// Parcels without a class file (or without data) are None.
+    pub parcels: Array2D<Option<Box<[u8]>>>,
+}
+
+impl ClassGrid {
+    /// Point `k` (row-major in its parcel) is in byte `k / 2`: the low nibble if `k` is even, else the high one.
+    pub fn class(&self, row: usize, column: usize) -> Option<u8> {
+        let parcel = self.parcels.get(row / self.resolution, column / self.resolution)?.as_deref()?;
+        let k = (row % self.resolution) * self.resolution + column % self.resolution;
+        let nibble = parcel.get(k / 2)? >> (4 * (k % 2)) & 0xF;
+        (nibble != CLASS_MISSING).then_some(nibble)
+    }
 }
 
 /// The first point is the most NW, the last point is the most SE. Indexed as `[row][column]`.
@@ -201,6 +226,9 @@ impl FullGrid {
 
         let mut parcels: Array2D<Option<Parcel>> =
             Array2D::filled_by_row_major(|| None, parcel_rows, parcel_columns);
+        let has_classes = rows.iter().any(|r| r.classes_file.is_some());
+        let mut classes: Array2D<Option<Box<[u8]>>> =
+            Array2D::filled_by_row_major(|| None, parcel_rows, parcel_columns);
         for r in &rows {
             let bytes = fs::read(dir.join(&r.file))?;
             if bytes.len() != resolution * resolution * 2 {
@@ -218,6 +246,17 @@ impl FullGrid {
                 .map(|&b| u16::from_le_bytes(b))
                 .collect();
             let (parcel_row, parcel_column) = slot(r);
+            if let Some(file) = &r.classes_file {
+                let bytes = fs::read(dir.join(file))?;
+                if bytes.len() != (resolution * resolution).div_ceil(2) {
+                    return Err(invalid(&format!(
+                        "{file}: expected {} bytes, got {}",
+                        (resolution * resolution).div_ceil(2),
+                        bytes.len()
+                    )));
+                }
+                classes[(parcel_row, parcel_column)] = Some(bytes.into_boxed_slice());
+            }
             parcels[(parcel_row, parcel_column)] = Some(Parcel {
                 x_start: r.x_start,
                 y_start: r.y_start,
@@ -236,6 +275,7 @@ impl FullGrid {
             alt_min: first.alt_min,
             alt_max: first.alt_max,
             contents,
+            classes: has_classes.then_some(ClassGrid { resolution, parcels: classes }),
         })
     }
 
@@ -270,14 +310,27 @@ impl FullGrid {
             .and_then(|p| self.decompress_altitude(p))
     }
 
-    /// Altitude of the point nearest to UTM coordinates (x, y).
-    pub fn altitude_at(&self, x: f64, y: f64) -> Option<f64> {
+    /// Row and column of the point nearest to UTM coordinates (x, y), None if north or west of the grid.
+    pub fn row_column_at(&self, x: f64, y: f64) -> Option<(usize, usize)> {
         let column = ((x - self.x_start) / self.cell_size).round();
         let row = ((self.y_start - y) / self.cell_size).round();
-        if row < 0.0 || column < 0.0 {
+        (row >= 0.0 && column >= 0.0).then_some((row as usize, column as usize))
+    }
+
+    /// Altitude of the point nearest to UTM coordinates (x, y).
+    pub fn altitude_at(&self, x: f64, y: f64) -> Option<f64> {
+        let (row, column) = self.row_column_at(x, y)?;
+        self.altitude(row, column)
+    }
+
+    /// ASPRS class (most common among the point's LiDAR returns) of the point nearest to UTM (x, y).
+    /// None if it has no data, is outside the grid, or the export has no classes.
+    pub fn class_at(&self, x: f64, y: f64) -> Option<u8> {
+        let (row, column) = self.row_column_at(x, y)?;
+        if row >= self.rows || column >= self.columns {
             return None;
         }
-        self.altitude(row as usize, column as usize)
+        self.classes.as_ref()?.class(row, column)
     }
 
     pub fn tree_stats(&self) -> TreeStats {
@@ -323,6 +376,9 @@ struct IndexRow {
     x_end: f64,
     alt_min: f64,
     alt_max: f64,
+    /// Absent in exports made before classes were added
+    #[serde(default)]
+    classes_file: Option<String>,
 }
 
 fn invalid(msg: &str) -> io::Error {
@@ -335,6 +391,12 @@ fn read_index(path: &Path) -> io::Result<Vec<IndexRow>> {
         .deserialize()
         .collect::<Result<Vec<IndexRow>, _>>()?;
     Ok(rows)
+}
+
+/// Packs one class per point into the `.cls` layout: point `k` in byte `k / 2`, even `k` in the low nibble.
+#[cfg(test)]
+pub fn pack_classes(classes: &[u8]) -> Box<[u8]> {
+    classes.chunks(2).map(|pair| pair[0] | pair.get(1).copied().unwrap_or(CLASS_MISSING) << 4).collect()
 }
 
 #[cfg(test)]
@@ -378,6 +440,7 @@ mod tests {
             alt_min: 0.0,
             alt_max: (MISSING - 1) as f64,
             contents,
+            classes: None,
         }
     }
 
@@ -444,6 +507,21 @@ mod tests {
     }
 
     #[test]
+    fn class_nibbles_are_read_in_order() {
+        // 3x3 parcel: an odd point count, so the last byte is half used
+        let values = [1, 2, 3, 5, 6, 9, CLASS_MISSING, 14, 0];
+        let mut parcels = Array2D::filled_by_row_major(|| None, 1, 2);
+        parcels[(0, 1)] = Some(pack_classes(&values));
+        let classes = ClassGrid { resolution: 3, parcels };
+        for (k, &value) in values.iter().enumerate() {
+            let expected = (value != CLASS_MISSING).then_some(value);
+            assert_eq!(classes.class(k / 3, 3 + k % 3), expected, "point {k}");
+        }
+        assert_eq!(classes.class(0, 0), None); // parcel without classes
+        assert_eq!(classes.class(3, 0), None); // outside
+    }
+
+    #[test]
     fn loads_export_directory() {
         let dir = std::env::temp_dir().join(format!("viewfinder-grid-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -465,5 +543,30 @@ mod tests {
         assert_eq!(grid.altitude(0, 0), Some(-10.0));
         assert_eq!(grid.altitude(0, 2), Some(10.0));
         assert_eq!(grid.altitude_at(101.75, 200.25), grid.altitude(1, 3));
+        assert!(grid.classes.is_none());
+        assert_eq!(grid.class_at(100.25, 200.75), None);
+    }
+
+    #[test]
+    fn loads_export_directory_with_classes() {
+        let dir = std::env::temp_dir().join(format!("viewfinder-grid-classes-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let header = "name,file,classes_file,crs,width,height,x_start,y_start,x_end,y_end,alt_min,alt_max\n";
+        let rows = "a,a.u16,a.cls,EPSG:26910,2,2,100.25,200.75,100.75,200.25,-10,10\n";
+        fs::write(dir.join("index.csv"), format!("{header}{rows}")).unwrap();
+        let encode = |v: [u16; 4]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        fs::write(dir.join("a.u16"), encode([0, 1, 2, MISSING])).unwrap();
+        fs::write(dir.join("a.cls"), pack_classes(&[6, 2, 9, CLASS_MISSING])).unwrap();
+
+        let grid = FullGrid::load(&dir).unwrap();
+        fs::write(dir.join("a.cls"), [0u8; 3]).unwrap();
+        let wrong_size = FullGrid::load(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(grid.class_at(100.25, 200.75), Some(6));
+        assert_eq!(grid.class_at(100.75, 200.75), Some(2));
+        assert_eq!(grid.class_at(100.25, 200.25), Some(9));
+        assert_eq!(grid.class_at(100.75, 200.25), None);
+        assert_eq!(grid.class_at(101.25, 200.25), None); // outside
+        assert!(wrong_size.is_err());
     }
 }
