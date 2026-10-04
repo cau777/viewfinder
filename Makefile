@@ -16,6 +16,9 @@ setup: ## Install everything (Python venv + Rust extension build + node_modules)
 dev: ## Hot-reload dev stack: Vite :5173 (HMR) + uvicorn :8000 (--reload) + Rust auto-rebuild
 	./scripts/dev.sh
 
+dev-remote: ## Vite only, with /api proxied to the API running on the JupyterHub server (JUPYTER_* in .env)
+	cd frontend && VIEWFINDER_REMOTE_API=1 npm run dev
+
 notebook: ## JupyterLab on notebooks/, using the backend venv (imports app.* and viewfinder_core)
 	cd backend && uv sync --quiet && uv run --no-sync jupyter lab --notebook-dir ../notebooks
 
@@ -64,4 +67,4 @@ release: wheel ## Self-contained tarball for a host with only Python >= 3.10 (no
 clean: ## Remove build artifacts
 	rm -rf rust/target frontend/dist dist-wheels dist-release backend/.venv
 
-.PHONY: help setup dev notebook notebook-check stubs stubs-check test build serve wheel release clean
+.PHONY: help setup dev dev-remote notebook notebook-check stubs stubs-check test build serve wheel release clean

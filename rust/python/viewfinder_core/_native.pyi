@@ -182,3 +182,17 @@ class RayTracer:
         """
         UTM (EPSG:26910) y of the most NW point.
         """
+
+def latlon_to_utm(latitude: float, longitude: float) -> tuple[float, float]:
+    """
+    latlon_to_utm(latitude, longitude)
+    
+    UTM zone 10N (EPSG:26910) `(x, y)` in metres of a NAD83 latitude and longitude in degrees.
+    """
+
+def utm_to_latlon(x: float, y: float) -> tuple[float, float]:
+    """
+    utm_to_latlon(x, y)
+    
+    NAD83 `(latitude, longitude)` in degrees of UTM zone 10N (EPSG:26910) metres.
+    """

@@ -1,45 +1,72 @@
 import os
+import threading
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-import viewfinder_core
-from app.analysis import analyze_text
+from viewfinder_core import RayTracer
+from app.view import NoDataError, NoObstructionError, compute_view
 
 app = FastAPI(title="viewfinder", version="0.1.0")
 
+# The u16 LiDAR export (index.csv + <NAME>.u16 files)
+DATA_DIR = Path(os.environ.get("VIEWFINDER_DATA_DIR", "~/data/lidar-vancouver-u16")).expanduser()
 
-class AnalyzeRequest(BaseModel):
-    text: str = Field(max_length=10_000)
-    repeat: int = Field(default=1, ge=1, le=100)
-    capacity: int = Field(default=4096, ge=1, le=1_000_000)
-
-
-class HistogramEntry(BaseModel):
-    byte: int
-    char: str | None
-    count: int
+_tracer: RayTracer | None = None
+_tracer_lock = threading.Lock()
 
 
-class AnalyzeResponse(BaseModel):
-    length: int
-    capacity: int
-    checksum: int
-    hex_preview: str
-    histogram_top: list[HistogramEntry]
-    core_version: str
+def get_tracer() -> RayTracer:
+    """The grid, loaded on first use (a few seconds) and shared by every request of this process."""
+    global _tracer
+    with _tracer_lock:
+        if _tracer is None:
+            if not (DATA_DIR / "index.csv").is_file():
+                raise HTTPException(status_code=503, detail=f"LiDAR data not found in {DATA_DIR}")
+            _tracer = RayTracer(DATA_DIR)
+        return _tracer
 
 
-@app.post("/api/analyze", response_model=AnalyzeResponse)
-def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
+class ViewRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    bearings: int = Field(default=360*4, ge=4, le=3600, description="Number of rays around the observer")
+
+
+class ViewPoint(BaseModel):
+    bearing: float
+    latitude: float
+    longitude: float
+    distance: float
+    unobstructed: bool
+
+
+class ViewResponse(BaseModel):
+    latitude: float
+    longitude: float
+    ground_altitude: float
+    altitude: float
+    average_distance: float
+    farthest_distance: float
+    unobstructed_share: float
+    points: list[ViewPoint]
+
+
+@app.post("/api/view", response_model=ViewResponse)
+def view(req: ViewRequest, tracer: Annotated[RayTracer, Depends(get_tracer)]) -> ViewResponse:
+    """The area visible from a position: where horizontal rays in every direction hit the surface.
+    Rays that hit nothing are limited to the average sightline."""
     try:
-        summary = analyze_text(req.text, req.repeat, req.capacity)
-    except ValueError as exc:  # raised from Rust on capacity overflow
+        result = compute_view(tracer, req.latitude, req.longitude, req.bearings)
+    except NoDataError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NoObstructionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return AnalyzeResponse(**summary, core_version=viewfinder_core.__version__)
+    return ViewResponse.model_validate(result, from_attributes=True)
 
 
 # --- Production: serve the built React app from the same process ------------
