@@ -82,6 +82,15 @@ class RayTracer:
         """
         Levels in the tree, including the leaf level.
         """
+    def ray_collisions(self, /, x: float, y: float, direction_x: float, direction_y: float, observer_altitude: float, min_elevation: float, max_elevation: float, resolution: int) -> list[float]:
+        """
+        ray_collisions(x, y, direction_x, direction_y, observer_altitude, min_elevation, max_elevation, resolution)
+        
+        Casts `resolution` rays from UTM (x, y) at `observer_altitude` metres, in one horizontal direction,
+        at elevation angles (radians) evenly spaced from `min_elevation` to `max_elevation`, both included.
+        Returns one value per angle, lowest first: the distance in metres the ray travels before hitting
+        the surface, `inf` if it probably reaches the sky, or `-inf` if it probably reaches the ocean.
+        """
     @property
     def rows(self, /) -> int:
         """

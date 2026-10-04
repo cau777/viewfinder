@@ -17,6 +17,7 @@ struct PossibleIntersection<'a> {
 pub struct Intersection {
     pub position: Vector2<f64>,
     pub altitude: Option<f64>,
+    pub top_distance_to_observer: f64,
 }
 
 /// Distance along the ray at which it enters the axis-aligned square [min, max], or None if it misses.
@@ -98,6 +99,7 @@ pub fn get_intersection_points(
                             hits.push((approach_to_observer, Intersection {
                                 position,
                                 altitude: grid.decompress_altitude(points[i][j]),
+                                top_distance_to_observer: approach_to_observer,
                             }));
                         }
                     }
