@@ -12,17 +12,20 @@ struct PossibleIntersection<'a> {
     scale: f64,
     /// Distance along the ray at which it enters the cell
     approach_to_observer: f64,
+    /// Distance along the ray at which it leaves the cell
+    exit_from_observer: f64,
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct Intersection {
     pub position: Vector2<f64>,
     pub altitude: Option<f64>,
     pub top_distance_to_observer: f64,
 }
 
-/// Distance along the ray at which it enters the axis-aligned square [min, max], or None if it misses.
-/// 0 if the observer is inside. Slab method: intersect the ray's ranges for x and y.
-fn ray_enters_square(origin: Vector2<f64>, direction: Vector2<f64>, min: Vector2<f64>, max: Vector2<f64>) -> Option<f64> {
+/// Distances along the ray at which it enters and leaves the axis-aligned square [min, max], or None
+/// if it misses. Entry is 0 if the observer is inside. Slab method: intersect the ray's ranges for x and y.
+fn ray_crosses_square(origin: Vector2<f64>, direction: Vector2<f64>, min: Vector2<f64>, max: Vector2<f64>) -> Option<(f64, f64)> {
     let mut t_enter = 0.0f64;
     let mut t_exit = f64::INFINITY;
     for axis in 0..2 {
@@ -38,7 +41,119 @@ fn ray_enters_square(origin: Vector2<f64>, direction: Vector2<f64>, min: Vector2
         t_enter = t_enter.max(t1.min(t2));
         t_exit = t_exit.min(t1.max(t2));
     }
-    (t_enter <= t_exit).then_some(t_enter)
+    (t_enter <= t_exit).then_some((t_enter, t_exit))
+}
+
+/// Walks the points whose 0.5 m cell a ray crosses (ignoring altitude), nearest first.
+/// Points without data inside the dataset are included with altitude None; empty subtrees are skipped.
+/// Lazy, so callers can stop early or skip subtrees with `next_unless`.
+pub struct IntersectionWalk<'a> {
+    grid: &'a FullGrid,
+    origin: Vector2<f64>,
+    direction: Vector2<f64>,
+    /// Centre of the last column/row: the leaves past them are padding up to 3^depth points
+    x_last: f64,
+    y_last: f64,
+    /// Depth-first, nearest child first: pops from the end
+    stack: Vec<PossibleIntersection<'a>>,
+    /// Points of the last leaf expanded, farthest first
+    pending: SmallVec<[Intersection; 9]>,
+}
+
+impl<'a> IntersectionWalk<'a> {
+    /// All positions are in UTM (meters). `direction` must be normalized.
+    pub fn new(grid: &'a FullGrid, origin: Vector2<f64>, direction: Vector2<f64>) -> Self {
+        let mut walk = IntersectionWalk {
+            grid,
+            origin,
+            direction,
+            x_last: grid.x_start + grid.columns.saturating_sub(1) as f64 * grid.cell_size,
+            y_last: grid.y_start - grid.rows.saturating_sub(1) as f64 * grid.cell_size,
+            stack: Vec::new(),
+            pending: SmallVec::new(),
+        };
+        if let Some(root) = grid.contents.as_deref() {
+            // grid.x_start/y_start is the centre of the NW point; the tree starts at its corner
+            let (x_start, y_start) = (grid.x_start - grid.cell_size / 2.0, grid.y_start + grid.cell_size / 2.0);
+            let scale = grid.cell_size * 3f64.powi(grid.depth as i32 - 1);
+            let min = Vector2::new(x_start, y_start - 3.0 * scale);
+            let max = Vector2::new(x_start + 3.0 * scale, y_start);
+            if let Some((approach_to_observer, exit_from_observer)) = ray_crosses_square(origin, direction, min, max) {
+                walk.stack.push(PossibleIntersection { cell: root, x_start, y_start, scale, approach_to_observer, exit_from_observer });
+            }
+        }
+        walk
+    }
+
+    /// Next point along the ray, skipping every subtree for which `skip(enter, exit, max_altitude)` is
+    /// true: the ray crosses it between distances `enter` and `exit`, and its highest point is `max_altitude`.
+    pub fn next_unless(&mut self, mut skip: impl FnMut(f64, f64, f64) -> bool) -> Option<Intersection> {
+        loop {
+            if let Some(hit) = self.pending.pop() {
+                return Some(hit);
+            }
+            let cell = self.stack.pop()?;
+            // Never MISSING: empty subtrees are not in the tree
+            let max_altitude = self.grid.decompress_altitude(cell.cell.max()).unwrap_or(f64::INFINITY);
+            if !skip(cell.approach_to_observer, cell.exit_from_observer, max_altitude) {
+                self.expand(cell);
+            }
+        }
+    }
+
+    fn expand(&mut self, PossibleIntersection { cell, x_start, y_start, scale, .. }: PossibleIntersection<'a>) {
+        let mut possible_collisions = SmallVec::<[PossibleIntersection; 9]>::new();
+
+        // i is the row (going south, y decreasing), j the column (going east)
+        for i in 0..3 {
+            for j in 0..3 {
+                let min = Vector2::new(x_start + j as f64 * scale, y_start - (i + 1) as f64 * scale);
+                let max = min + Vector2::new(scale, scale);
+                let Some((approach_to_observer, exit_from_observer)) = ray_crosses_square(self.origin, self.direction, min, max) else {
+                    continue;
+                };
+
+                match cell {
+                    CellContents::Subcells { cells, .. } => {
+                        if let Some(subcell) = &cells[i][j] {
+                            possible_collisions.push(PossibleIntersection {
+                                cell: subcell,
+                                x_start: min.x,
+                                y_start: max.y,
+                                scale: scale / 3.0,
+                                approach_to_observer,
+                                exit_from_observer,
+                            });
+                        }
+                    }
+                    CellContents::Points { points, .. } => {
+                        let position = (min + max) / 2.0;
+                        if position.x <= self.x_last && position.y >= self.y_last {
+                            self.pending.push(Intersection {
+                                position,
+                                altitude: self.grid.decompress_altitude(points[i][j]),
+                                top_distance_to_observer: approach_to_observer,
+                            });
+                        }
+                    }
+                };
+            }
+        }
+
+        // Cells along a ray don't overlap, so the order they are entered in is the order of everything inside them.
+        // Both are popped from the end, so farthest first.
+        self.pending.sort_by(|a, b| b.top_distance_to_observer.total_cmp(&a.top_distance_to_observer));
+        possible_collisions.sort_by(|a, b| b.approach_to_observer.total_cmp(&a.approach_to_observer));
+        self.stack.extend(possible_collisions);
+    }
+}
+
+impl Iterator for IntersectionWalk<'_> {
+    type Item = Intersection;
+
+    fn next(&mut self) -> Option<Intersection> {
+        self.next_unless(|_, _, _| false)
+    }
 }
 
 /// All points whose 0.5 m cell the ray crosses (ignoring altitude), sorted by distance from the observer.
@@ -50,71 +165,7 @@ pub fn get_intersection_points(
     observer_position: Vector2<f64>,
     observer_direction: Vector2<f64>,
 ) -> Vec<Intersection> {
-    let mut result = Vec::new();
-    let Some(root) = grid.contents.as_deref() else {
-        return result;
-    };
-    // The leaves past the last row/column are padding up to 3^depth points
-    let x_last = grid.x_start + (grid.columns - 1) as f64 * grid.cell_size;
-    let y_last = grid.y_start - (grid.rows - 1) as f64 * grid.cell_size;
-
-    // Depth-first, nearest child first: the stack pops from the end
-    let mut stack = vec![PossibleIntersection {
-        cell: root,
-        // grid.x_start/y_start is the centre of the NW point; the tree starts at its corner
-        x_start: grid.x_start - grid.cell_size / 2.0,
-        y_start: grid.y_start + grid.cell_size / 2.0,
-        scale: grid.cell_size * 3f64.powi(grid.depth as i32 - 1),
-        approach_to_observer: 0.0,
-    }];
-
-    while let Some(PossibleIntersection { cell, x_start, y_start, scale, .. }) = stack.pop() {
-        let mut possible_collisions = SmallVec::<[PossibleIntersection; 9]>::new();
-        let mut hits = SmallVec::<[(f64, Intersection); 9]>::new();
-
-        // i is the row (going south, y decreasing), j the column (going east)
-        for i in 0..3 {
-            for j in 0..3 {
-                let min = Vector2::new(x_start + j as f64 * scale, y_start - (i + 1) as f64 * scale);
-                let max = min + Vector2::new(scale, scale);
-                let Some(approach_to_observer) = ray_enters_square(observer_position, observer_direction, min, max) else {
-                    continue;
-                };
-
-                match cell {
-                    CellContents::Subcells { cells } => {
-                        if let Some(subcell) = &cells[i][j] {
-                            possible_collisions.push(PossibleIntersection {
-                                cell: subcell,
-                                x_start: min.x,
-                                y_start: max.y,
-                                scale: scale / 3.0,
-                                approach_to_observer,
-                            });
-                        }
-                    }
-                    CellContents::Points { points } => {
-                        let position = (min + max) / 2.0;
-                        if position.x <= x_last && position.y >= y_last {
-                            hits.push((approach_to_observer, Intersection {
-                                position,
-                                altitude: grid.decompress_altitude(points[i][j]),
-                                top_distance_to_observer: approach_to_observer,
-                            }));
-                        }
-                    }
-                };
-            }
-        }
-
-        // Cells along a ray don't overlap, so the order they are entered in is the order of everything inside them
-        hits.sort_by(|a, b| a.0.total_cmp(&b.0));
-        result.extend(hits.into_iter().map(|(_, hit)| hit));
-        possible_collisions.sort_by(|a, b| b.approach_to_observer.total_cmp(&a.approach_to_observer));
-        stack.extend(possible_collisions);
-    }
-
-    result // Sorted: closer points are at the front
+    IntersectionWalk::new(grid, observer_position, observer_direction).collect() // Closer points at the front
 }
 
 #[cfg(test)]
@@ -172,7 +223,7 @@ mod tests {
                 if !leaf_has_data {
                     continue;
                 }
-                if ray_enters_square(origin, direction, centre - half, centre + half).is_some() {
+                if ray_crosses_square(origin, direction, centre - half, centre + half).is_some() {
                     hits.push((row, column));
                 }
             }

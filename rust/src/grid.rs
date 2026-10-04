@@ -41,11 +41,24 @@ pub type SubcellGrid = [[Option<Arc<CellContents>>; 3]; 3];
 pub enum CellContents {
     Points {
         points: PointGrid,
+        /// Highest point with data, so ray casting can skip subtrees the ray passes above
+        max: u16,
     },
     Subcells {
         // Boxed so leaves don't pay for the 72-byte child array: keeps the enum at 24 bytes
         cells: Box<SubcellGrid>,
+        /// Highest point with data in the whole subtree
+        max: u16,
     },
+}
+
+impl CellContents {
+    /// Highest point with data in this subtree (never MISSING: empty subtrees are None).
+    pub fn max(&self) -> u16 {
+        match self {
+            Points { max, .. } | Subcells { max, .. } => *max,
+        }
+    }
 }
 
 pub struct Parcel {
@@ -70,29 +83,41 @@ pub fn make_cells(
 ) -> (Option<Arc<CellContents>>, u32) {
     let rows = parcels.num_rows() * resolution;
     let columns = parcels.num_columns() * resolution;
-    let point = |row: usize, column: usize| -> u16 {
-        if row >= rows || column >= columns {
-            return MISSING;
-        }
-        match &parcels[(row / resolution, column / resolution)] {
-            Some(parcel) => parcel.points[(row % resolution, column % resolution)],
-            None => MISSING,
-        }
-    };
 
     // First layer: leaves of 3x3 points
     let (leaf_rows, leaf_columns) = (rows.div_ceil(3), columns.div_ceil(3));
-    let leaves = indices(leaf_rows, leaf_columns).map(|(leaf_row, leaf_column)| {
-        let mut points: PointGrid = [[MISSING; 3]; 3];
-        for (dr, points_row) in points.iter_mut().enumerate() {
-            for (dc, p) in points_row.iter_mut().enumerate() {
-                *p = point(leaf_row * 3 + dr, leaf_column * 3 + dc);
+    let mut leaves = Vec::with_capacity(leaf_rows * leaf_columns);
+    // The 3 point rows of one row of leaves, padded with MISSING up to whole leaves
+    let strip_width = leaf_columns * 3;
+    let mut strip = vec![MISSING; 3 * strip_width];
+    for leaf_row in 0..leaf_rows {
+        for (dr, strip_row) in strip.chunks_exact_mut(strip_width).enumerate() {
+            let row = leaf_row * 3 + dr;
+            strip_row.fill(MISSING);
+            if row >= rows {
+                continue;
+            }
+            for parcel_column in 0..parcels.num_columns() {
+                if let Some(parcel) = &parcels[(row / resolution, parcel_column)] {
+                    let start = parcel_column * resolution;
+                    let parcel_row = parcel.points.row_iter(row % resolution).unwrap();
+                    for (p, &value) in strip_row[start..start + resolution].iter_mut().zip(parcel_row) {
+                        *p = value;
+                    }
+                }
             }
         }
-        let empty = points.iter().flatten().all(|&p| p == MISSING);
-        (!empty).then(|| Arc::new(Points { points }))
-    });
-    let mut cells = Array2D::from_iter_row_major(leaves, leaf_rows, leaf_columns).unwrap();
+        for leaf_column in 0..leaf_columns {
+            let mut points: PointGrid = [[MISSING; 3]; 3];
+            for (dr, points_row) in points.iter_mut().enumerate() {
+                let start = dr * strip_width + leaf_column * 3;
+                points_row.copy_from_slice(&strip[start..start + 3]);
+            }
+            let max = points.iter().flatten().copied().filter(|&p| p != MISSING).max();
+            leaves.push(max.map(|max| Arc::new(Points { points, max })));
+        }
+    }
+    let mut cells = Array2D::from_iter_row_major(leaves.into_iter(), leaf_rows, leaf_columns).unwrap();
     let mut depth = 1;
 
     // Group 3x3 cells into a parent until the final grid cell is a single cell
@@ -110,10 +135,11 @@ pub fn make_cells(
                         .and_then(Option::take);
                 }
             }
-            let empty = sub.iter().flatten().all(Option::is_none);
-            (!empty).then(|| {
+            let max = sub.iter().flatten().flatten().map(|child| child.max()).max();
+            max.map(|max| {
                 Arc::new(Subcells {
                     cells: Box::new(sub),
+                    max,
                 })
             })
         });
@@ -224,8 +250,8 @@ impl FullGrid {
             span /= 3;
             let (i, j) = ((row / span) % 3, (column / span) % 3);
             match node {
-                Subcells { cells } => node = cells[i][j].as_deref()?,
-                Points { points } => return Some(points[i][j]).filter(|&p| p != MISSING),
+                Subcells { cells, .. } => node = cells[i][j].as_deref()?,
+                Points { points, .. } => return Some(points[i][j]).filter(|&p| p != MISSING),
             }
         }
     }
@@ -258,12 +284,12 @@ impl FullGrid {
         fn visit(node: &CellContents, level: usize, stats: &mut TreeStats) {
             stats.nodes_per_level[level] += 1;
             match node {
-                Points { points } => {
+                Points { points, .. } => {
                     let present = points.iter().flatten().filter(|&&p| p != MISSING).count();
                     stats.points_present += present;
                     stats.points_missing_in_leaves += 9 - present;
                 }
-                Subcells { cells } => {
+                Subcells { cells, .. } => {
                     for child in cells.iter().flatten() {
                         match child {
                             Some(child) => visit(child, level + 1, stats),
@@ -383,6 +409,24 @@ mod tests {
         assert_eq!(stats.nodes_per_level, vec![1, 4, 20]);
         assert_eq!(stats.points_present, 5 * 36 - 1);
         assert_eq!(stats.points_missing_in_leaves, 1);
+    }
+
+    #[test]
+    fn max_is_highest_point_of_subtree() {
+        fn check(node: &CellContents) -> u16 {
+            let max = match node {
+                Points { points, .. } => points.iter().flatten().copied().filter(|&p| p != MISSING).max().unwrap(),
+                Subcells { cells, .. } => cells.iter().flatten().flatten().map(|c| check(c)).max().unwrap(),
+            };
+            assert_eq!(node.max(), max);
+            max
+        }
+        let (parcels, resolution) = synthetic();
+        let grid = grid_from(&parcels, resolution);
+        // Highest stored value: global position (11, 17) -> 1117
+        assert_eq!(check(grid.contents.as_deref().unwrap()), 1117);
+        // The max fits in the enum's padding
+        assert_eq!(size_of::<CellContents>(), 24);
     }
 
     #[test]

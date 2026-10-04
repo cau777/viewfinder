@@ -1,6 +1,6 @@
 use crate::grid::FullGrid;
 use crate::ray_collisions::RayCastResult::{Collision, ProbablyOcean, ProbablySky};
-use crate::ray_tracing::get_intersection_points;
+use crate::ray_tracing::IntersectionWalk;
 use crate::util::Coordinates;
 use nalgebra::Vector2;
 
@@ -58,39 +58,58 @@ pub fn ray_collisions(grid: &FullGrid,
     debug_assert!(min_elevation_angle <= max_elevation_angle);
     let observer_direction = Vector2::new(horizontal_angle.sin(), horizontal_angle.cos());
 
-    // Sorted by distance, so the first point above a ray is where it collides
-    let points = get_intersection_points(grid, observer_position, observer_direction);
+    // Nearest first, so the first point above a ray is where it collides
+    let mut walk = IntersectionWalk::new(grid, observer_position, observer_direction);
     // A ray passing above a point also passes above it at every higher angle, so each angle
     // continues the search where the previous one stopped: all angles together cost one walk.
-    let mut next_point = 0;
+    // The point the previous angle collided with is checked again by the next one.
+    let mut current = None;
 
     (0..resolution)
         .map(|i| {
             let fraction = if resolution > 1 { i as f64 / (resolution - 1) as f64 } else { 0.0 };
             let angle = min_elevation_angle + (max_elevation_angle - min_elevation_angle) * fraction;
             let slope = angle.tan();
+            // Subtrees this ray passes entirely above can't hold its collision, nor any higher angle's
+            let next_point = |walk: &mut IntersectionWalk| {
+                walk.next_unless(|enter, exit, max_altitude| {
+                    passes_above(observer_altitude, slope, enter, exit, max_altitude)
+                })
+            };
 
-            while let Some(point) = points.get(next_point) {
-                if let Some(point_altitude) = point.altitude {
-                    let distance = point.top_distance_to_observer;
+            let mut point = current.take().or_else(|| next_point(&mut walk));
+            while let Some(p) = point {
+                if let Some(point_altitude) = p.altitude {
+                    let distance = p.top_distance_to_observer;
                     let ray_altitude = observer_altitude + distance * slope;
                     if ray_altitude <= point_altitude - curvature_drop(distance) {
+                        current = Some(p);
                         return Collision {
                             distance: distance / angle.cos(),
                             vertical_angle: angle,
                             horizontal_angle,
-                            coordinates: Coordinates::from_utm(point.position.x, point.position.y),
+                            coordinates: Coordinates::from_utm(p.position.x, p.position.y),
                             altitude_ray: ray_altitude,
                             altitude_at_collision: point_altitude,
                         };
                     }
                 }
-                next_point += 1;
+                point = next_point(&mut walk);
             }
 
             if angle < 0.0 { ProbablyOcean } else { ProbablySky }
         })
         .collect()
+}
+
+/// Whether a ray with `slope` stays above `max_altitude` (minus the curvature drop) for every distance
+/// from `enter` to `exit`, so it can't collide with anything there.
+fn passes_above(observer_altitude: f64, slope: f64, enter: f64, exit: f64, max_altitude: f64) -> bool {
+    // Ray height above the curved surface's reference: observer_altitude + slope·d + c·d², convex in d
+    let c = (1.0 - REFRACTION) / (2.0 * EARTH_RADIUS);
+    // Widened by a millimetre and compared with a margin, so rounding never skips a collision
+    let lowest = (-slope / (2.0 * c)).clamp(enter - 1e-3, exit + 1e-3);
+    observer_altitude + slope * lowest + c * lowest * lowest > max_altitude + 1e-6
 }
 
 /// `ray_collisions` for `horizontal_resolution` horizontal angles evenly spaced from
@@ -127,6 +146,7 @@ pub fn ray_collisions_around(
 mod tests {
     use super::*;
     use crate::grid::{make_cells, Parcel, MISSING};
+    use crate::ray_tracing::get_intersection_points;
     use array2d::Array2D;
 
     /// Square grid with altitudes in metres (None = no data), first point centred at (0, 0).
