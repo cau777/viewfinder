@@ -6,7 +6,7 @@ import Panorama from './Panorama'
 import PanoramaDescription from './PanoramaDescription'
 import ViewDetails, { ViewSummary } from './ViewDetails'
 import 'leaflet/dist/leaflet.css'
-import { fetchView, type Coordinates, type View } from './api'
+import { fetchView, NoDataError, type Coordinates, type View } from './api'
 
 const VANCOUVER: L.LatLngExpression = [49.2827, -123.1207]
 const pinIcon = L.divIcon({ className: 'viewfinder-pin', html: '<span></span>', iconSize: [32, 40], iconAnchor: [16, 40] })
@@ -41,6 +41,7 @@ export default function App() {
   const [view, setView] = useState<View | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [noData, setNoData] = useState(false)
   const [mapError, setMapError] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [panoramaReady, setPanoramaReady] = useState<Coordinates | null>(null)
@@ -93,9 +94,15 @@ export default function App() {
     setLoading(true)
     setView(null)
     setError(null)
+    setNoData(false)
     fetchView(point, controller.signal)
       .then(result => { if (!controller.signal.aborted) setView(result) })
-      .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Unable to load this view.') })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : 'Unable to load this view.')
+          setNoData(reason instanceof NoDataError)
+        }
+      })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [point, attempt])
@@ -159,10 +166,10 @@ export default function App() {
         {point && <aside className="view-panel" aria-label="Selected location" aria-busy={loading}>
           <div className="panel-top"><span className="eyebrow">YOUR PERSPECTIVE</span><button className="close-button" onClick={closePanel} aria-label="Close location details">×</button></div>
           <div className="view-art"><Panorama point={point} initialBearing={farthestBearing} onLoad={setPanoramaReady} fallback={<div aria-hidden="true"><div className="sun" /><div className="mountain mountain-back" /><div className="mountain mountain-front" /><div className="water" /><span className="art-label">A PLACE TO PAUSE</span></div>} /></div>
-          <p className="panorama-hint">Drag to rotate your perspective.</p>
+          {!noData && <p className="panorama-hint">Drag to rotate your perspective.</p>}
           <div className="panel-content"><div className="location-tag"><span className="status-dot" /> PINNED LOCATION</div><h2>Your selected view</h2><p className="coordinates">{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</p>
-            <div aria-live="polite">{loading ? <div className="view-loading" role="status"><span className="spinner" /><p>Measuring your view…</p><div className="metric-skeleton" aria-hidden="true" /><div className="stats-skeleton" aria-hidden="true"><span /><span /></div></div> : error ? <div role="alert"><p>{error}</p><button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button></div> : view && <ViewSummary view={view} />}</div>
-            <PanoramaDescription key={`description:${point.latitude},${point.longitude}`} point={point} ready={panoramaReady === point} />
+            <div aria-live="polite">{loading ? <div className="view-loading" role="status"><span className="spinner" /><p>Measuring your view…</p><div className="metric-skeleton" aria-hidden="true" /><div className="stats-skeleton" aria-hidden="true"><span /><span /></div></div> : error ? <div role="alert"><p>{error}</p>{!noData && <button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button>}</div> : view && <ViewSummary view={view} />}</div>
+            {!noData && <PanoramaDescription key={`description:${point.latitude},${point.longitude}`} point={point} ready={panoramaReady === point} />}
             {!loading && !error && view && <ViewDetails key={`details:${point.latitude},${point.longitude}`} view={view} />}
           </div>
         </aside>}

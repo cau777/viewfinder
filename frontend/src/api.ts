@@ -33,6 +33,12 @@ export type View = Coordinates & {
   analysis?: ViewAnalysis | null
 }
 
+export class NoDataError extends Error {
+  constructor() {
+    super("Sorry, we don't have data for this position. Please select another location.")
+  }
+}
+
 export async function fetchView(point: Coordinates, signal: AbortSignal): Promise<View> {
   const response = await fetch('/api/view', {
     method: 'POST',
@@ -40,6 +46,7 @@ export async function fetchView(point: Coordinates, signal: AbortSignal): Promis
     body: JSON.stringify(point),
     signal,
   })
+  if (response.status === 404) throw new NoDataError()
   const body = await response.json().catch(() => ({ detail: response.statusText }))
   if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Unable to load this view.')
   return body as View
