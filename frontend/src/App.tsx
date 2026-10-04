@@ -162,8 +162,8 @@ export default function App() {
           <p className="panorama-hint">Drag to rotate your perspective.</p>
           <div className="panel-content"><div className="location-tag"><span className="status-dot" /> PINNED LOCATION</div><h2>Your selected view</h2><p className="coordinates">{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</p>
             <div aria-live="polite">{loading ? <div className="view-loading" role="status"><span className="spinner" /><p>Measuring your view…</p><div className="metric-skeleton" aria-hidden="true" /><div className="stats-skeleton" aria-hidden="true"><span /><span /></div></div> : error ? <div role="alert"><p>{error}</p><button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button></div> : view && <ViewSummary view={view} />}</div>
-            <PanoramaDescription key={`${point.latitude},${point.longitude}`} point={point} ready={panoramaReady === point} />
-            {!loading && !error && view && <ViewDetails key={`${point.latitude},${point.longitude}`} view={view} />}
+            <PanoramaDescription key={`description:${point.latitude},${point.longitude}`} point={point} ready={panoramaReady === point} />
+            {!loading && !error && view && <ViewDetails key={`details:${point.latitude},${point.longitude}`} view={view} />}
           </div>
         </aside>}
       </main>
