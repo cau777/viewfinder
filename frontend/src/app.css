@@ -151,6 +151,7 @@ h1{font-size:23px}
 .sun-card strong{font-size:21px;font-weight:500}
 .sun-card p{font-size:10px;color:var(--color-muted);margin:8px 0 0;line-height:1.5}
 .sun-card .sun-open{color:var(--color-accent-2)}
+.sun-card.sun-card-disabled{opacity:.55;filter:grayscale(1)}
 .analysis-date,.detail-note{font-size:10px;color:var(--color-muted);line-height:1.7}
 .ocean-card{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px;background:var(--color-card);border-radius:9px}
 .ocean-card span{font-size:10px;color:var(--color-muted)}

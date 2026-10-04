@@ -6,8 +6,9 @@ function distance(metres: number) {
 }
 function SunCard({ title, sun }: { title: string; sun?: SunInfo }) {
   const time = sun ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(sun.time)) : '—'
-  return <div className="sun-card"><span className="sun-icon" aria-hidden="true">{title === 'Sunrise' ? '☀ ↗' : '☀ ↘'}</span><h4>{title}</h4><strong>{time}</strong>
-    {sun && <><p>{Math.round(sun.bearing)}° from north</p><p className="sun-open">{Math.round(sun.open_share * 100)}% of directions open</p></>}
+  const openPercent = sun ? Math.round(sun.open_share * 100) : null
+  return <div className={`sun-card${openPercent === 0 ? ' sun-card-disabled' : ''}`}><span className="sun-icon" aria-hidden="true">{title === 'Sunrise' ? '☀ ↗' : '☀ ↘'}</span><h4>{title}</h4><strong>{time}</strong>
+    {sun && <><p>{Math.round(sun.bearing)}° from north</p><p className="sun-open">{openPercent}% of directions open</p></>}
   </div>
 }
 
