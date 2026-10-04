@@ -137,7 +137,6 @@ export default function App() {
       </header>
       <main className="map-shell">
         <div ref={container} className="map" aria-label="Interactive map of Vancouver. Click a location to discover its view." />
-        <section className="map-intro"><span className="eyebrow">EXPLORE YOUR PERSPECTIVE</span><h1>Every place has a view.</h1><p>Drop a pin. Discover what’s around you.</p></section>
         {mapError && <div className="map-error" role="alert">{satellite ? 'Satellite imagery could not load. Check your connection or switch to the street map.' : 'Map tiles could not load. Check your connection and CARTO basemap key.'}</div>}
         <div className="basemap-toggle" role="group" aria-label="Map style">
           <button type="button" aria-pressed={!satellite} onClick={() => setSatellite(false)}>Map</button>
@@ -148,7 +147,7 @@ export default function App() {
           <button onClick={() => map.current?.zoomOut()} aria-label="Zoom out">−</button>
           <button className="recenter" onClick={() => map.current?.setView(VANCOUVER, 13)} aria-label="Return to Vancouver" title="Return to Vancouver">⌖</button>
         </div>
-        {!point && <div className="map-hint"><span className="hint-pin">⌖</span><div><strong>Start with a little curiosity</strong><span>Click anywhere on the map to find your view</span></div><span className="hint-arrow">↗</span></div>}
+        {!point && <div className="map-hint"><span className="hint-pin">⌖</span><div><span>Click anywhere on the map to analyze the gorgeous view at that location</span></div></div>}
         {point && <aside className="view-panel" aria-label="Selected location" aria-busy={loading}>
           <div className="panel-top"><span className="eyebrow">YOUR PERSPECTIVE</span><button className="close-button" onClick={closePanel} aria-label="Close location details">×</button></div>
           <div className="view-art" aria-hidden="true"><div className="sun" /><div className="mountain mountain-back" /><div className="mountain mountain-front" /><div className="water" /><span className="art-label">A PLACE TO PAUSE</span></div>
