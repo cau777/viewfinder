@@ -124,6 +124,63 @@ export default function App() {
     })
   }, [view])
 
+  // Sun bearings point toward the horizon; keep their markers on the visible map edge.
+  useEffect(() => {
+    const instance = map.current
+    if (!instance || !view?.analysis) return
+    const events = [
+      { label: 'Sunrise', sun: view.analysis.sunrise, arrow: 'M12 10V2m-3 3 3-3 3 3' },
+      { label: 'Sunset', sun: view.analysis.sunset, arrow: 'M12 2v8m-3-3 3 3 3-3' },
+    ].filter(({ sun }) => Math.round(sun.open_share * 100) > 0)
+    const markers = events.map(({ label, sun, arrow }) => L.marker([view.latitude, view.longitude], {
+      icon: L.divIcon({
+        className: 'sun-map-marker',
+        html: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${arrow}M6 17a6 6 0 0 1 12 0M3 17h18M3 21h18M3 11l2 2m14 0 2-2" /></svg>`,
+        iconSize: [40, 40], iconAnchor: [20, 20],
+      }),
+      title: `${label} · ${Math.round(sun.bearing)}° from north`,
+      alt: `${label} direction`,
+      zIndexOffset: 1000,
+    }).bindTooltip(`${label} · ${Math.round(sun.open_share * 100)}% open`).addTo(instance))
+    const update = () => {
+      const size = instance.getSize()
+      const mapRect = instance.getContainer().getBoundingClientRect()
+      const panelRect = document.querySelector('.view-panel')?.getBoundingClientRect()
+      const padding = 30
+      const left = padding
+      const top = padding
+      let right = size.x - padding
+      let bottom = size.y - padding
+      if (panelRect) {
+        if (panelRect.width < size.x * 0.8) right = Math.min(right, panelRect.left - mapRect.left - padding)
+        else bottom = Math.min(bottom, panelRect.top - mapRect.top - padding)
+      }
+      if (right <= left || bottom <= top) return
+      const selected = instance.latLngToContainerPoint([view.latitude, view.longitude])
+      const origin = L.point(Math.max(left, Math.min(right, selected.x)), Math.max(top, Math.min(bottom, selected.y)))
+      events.forEach(({ sun }, index) => {
+        const radians = sun.bearing * Math.PI / 180
+        const dx = Math.sin(radians)
+        const dy = -Math.cos(radians)
+        const tx = Math.abs(dx) < 1e-10 ? Infinity : ((dx > 0 ? right : left) - origin.x) / dx
+        const ty = Math.abs(dy) < 1e-10 ? Infinity : ((dy > 0 ? bottom : top) - origin.y) / dy
+        const extent = Math.min(tx, ty)
+        markers[index].setLatLng(instance.containerPointToLatLng(L.point(origin.x + dx * extent, origin.y + dy * extent)))
+      })
+    }
+    update()
+    instance.on('move zoom resize', update)
+    const observer = new ResizeObserver(update)
+    observer.observe(instance.getContainer())
+    const panel = document.querySelector('.view-panel')
+    if (panel) observer.observe(panel)
+    return () => {
+      instance.off('move zoom resize', update)
+      observer.disconnect()
+      markers.forEach(marker => marker.remove())
+    }
+  }, [view])
+
   const hits = view?.points.filter(p => !p.unobstructed) ?? []
   // The panorama opens facing the longest sightline
   const farthestBearing = hits.length ? hits.reduce((farthest, p) => p.distance > farthest.distance ? p : farthest).bearing : null

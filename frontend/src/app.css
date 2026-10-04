@@ -152,6 +152,8 @@ h1{font-size:23px}
 .sun-card p{font-size:10px;color:var(--color-muted);margin:8px 0 0;line-height:1.5}
 .sun-card .sun-open{color:var(--color-accent-2)}
 .sun-card.sun-card-disabled{opacity:.55;filter:grayscale(1)}
+.sun-map-marker{display:grid;place-items:center;background:var(--color-surface);color:var(--color-accent-2);border:1px solid var(--color-accent-2);border-radius:50%;box-shadow:0 3px 12px #0006;cursor:help}
+.sun-map-marker svg{width:26px;height:26px}
 .analysis-date,.detail-note{font-size:10px;color:var(--color-muted);line-height:1.7}
 .ocean-card{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px;background:var(--color-card);border-radius:9px}
 .ocean-card span{font-size:10px;color:var(--color-muted)}
