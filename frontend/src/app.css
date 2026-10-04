@@ -119,3 +119,9 @@ h1{font-size:23px}
 .basemap-toggle button:hover{background:var(--color-card);color:var(--color-text)}
 .basemap-toggle button[aria-pressed="true"]{background:var(--color-accent);color:var(--color-background)}
 @media(max-width:700px){.basemap-toggle{left:18px;bottom:20px}.map-shell:has(.view-panel) .basemap-toggle{top:305px;bottom:auto}}
+.view-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0}
+.view-stats>div{background:var(--color-card);border-radius:8px;padding:11px 13px}
+.view-stats dt{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--color-muted)}
+.view-stats dd{margin:5px 0 0;font-size:17px;font-weight:500}
+.view-legend{display:flex;gap:9px;align-items:baseline;font-size:10px;line-height:1.6;color:var(--color-muted);margin:16px 0 0}
+.legend-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--color-accent-2)}

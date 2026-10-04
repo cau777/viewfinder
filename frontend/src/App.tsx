@@ -2,18 +2,25 @@ import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import AddressSearch from './AddressSearch'
 import 'leaflet/dist/leaflet.css'
-import { describeView, type Coordinates, type ViewDescription } from './api'
+import { fetchView, type Coordinates, type View } from './api'
 
 const VANCOUVER: L.LatLngExpression = [49.2827, -123.1207]
 const pinIcon = L.divIcon({ className: 'viewfinder-pin', html: '<span></span>', iconSize: [32, 40], iconAnchor: [16, 40] })
+const VIEW_STYLE: L.PolylineOptions = { color: '#FF6B6B', weight: 2, fillColor: '#FF6B6B', fillOpacity: 0.18 }
+const UNOBSTRUCTED_STYLE: L.CircleMarkerOptions = { radius: 2.5, color: '#FFD166', weight: 0, fillOpacity: 1 }
+
+function formatDistance(metres: number) {
+  return metres < 1000 ? `${Math.round(metres)} m` : `${(metres / 1000).toFixed(1)} km`
+}
 
 export default function App() {
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
   const marker = useRef<L.Marker | null>(null)
+  const viewLayer = useRef<L.LayerGroup | null>(null)
   const [satellite, setSatellite] = useState(false)
   const [point, setPoint] = useState<Coordinates | null>(null)
-  const [view, setView] = useState<ViewDescription | null>(null)
+  const [view, setView] = useState<View | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mapError, setMapError] = useState(false)
@@ -23,12 +30,13 @@ export default function App() {
     if (!container.current) return
     const instance = L.map(container.current, { zoomControl: false }).setView(VANCOUVER, 13)
     map.current = instance
+    viewLayer.current = L.layerGroup().addTo(instance)
     instance.on('click', ({ latlng }: L.LeafletMouseEvent) => {
       marker.current?.remove()
       marker.current = L.marker(latlng, { icon: pinIcon }).addTo(instance)
       setPoint({ latitude: latlng.lat, longitude: latlng.lng })
     })
-    return () => { instance.remove(); map.current = null; marker.current = null }
+    return () => { instance.remove(); map.current = null; marker.current = null; viewLayer.current = null }
   }, [])
 
   useEffect(() => {
@@ -57,12 +65,25 @@ export default function App() {
     setLoading(true)
     setView(null)
     setError(null)
-    describeView(point, controller.signal)
+    fetchView(point, controller.signal)
       .then(setView)
       .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Unable to load this view.') })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [point, attempt])
+
+  // The visible area: one vertex per ray, where it hits the surface or, if nothing is in the way, at the average sightline
+  useEffect(() => {
+    const layer = viewLayer.current
+    if (!layer) return
+    layer.clearLayers()
+    if (!view) return
+    L.polygon(view.points.map(p => [p.latitude, p.longitude] as L.LatLngTuple), VIEW_STYLE).addTo(layer)
+    for (const p of view.points.filter(p => p.unobstructed)) L.circleMarker([p.latitude, p.longitude], UNOBSTRUCTED_STYLE).addTo(layer)
+  }, [view])
+
+  const hits = view?.points.filter(p => !p.unobstructed) ?? []
+  const unobstructedShare = view ? 1 - hits.length / view.points.length : 0
 
   function closePanel() {
     setPoint(null)
@@ -101,8 +122,8 @@ export default function App() {
         {point && <aside className="view-panel" aria-label="Selected location" aria-busy={loading}>
           <div className="panel-top"><span className="eyebrow">YOUR PERSPECTIVE</span><button className="close-button" onClick={closePanel} aria-label="Close location details">×</button></div>
           <div className="view-art" aria-hidden="true"><div className="sun" /><div className="mountain mountain-back" /><div className="mountain mountain-front" /><div className="water" /><span className="art-label">A PLACE TO PAUSE</span></div>
-          <div className="panel-content"><div className="location-tag"><span className="status-dot" /> PINNED LOCATION</div><h2>{loading ? 'Finding your view…' : view?.title ?? 'Your selected view'}</h2><p className="coordinates">{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</p>
-            <div aria-live="polite">{loading ? <div className="loading-state"><span className="spinner" /><p>Taking a look around.<br /><span>Your perspective is on its way.</span></p></div> : error ? <div role="alert"><p>{error}</p><button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button></div> : view && <><div className="description-heading"><span>↗</span><h3>From where you stand</h3></div><p className="description">{view.description}</p><div className="view-tags">{view.tags.map(tag => <span key={tag}>{tag}</span>)}</div><div className="mock-note"><span>✧</span> A preview of what’s possible<p>This is an illustrative description. Live location insights are coming soon.</p></div></>}</div>
+          <div className="panel-content"><div className="location-tag"><span className="status-dot" /> PINNED LOCATION</div><h2>{loading ? 'Finding your view…' : view ? `You can see ${formatDistance(view.average_distance)} around` : 'Your selected view'}</h2><p className="coordinates">{point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</p>
+            <div aria-live="polite">{loading ? <div className="loading-state"><span className="spinner" /><p>Taking a look around.<br /><span>Your perspective is on its way.</span></p></div> : error ? <div role="alert"><p>{error}</p><button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again ↗</button></div> : view && <><div className="description-heading"><span>↗</span><h3>From where you stand</h3></div><p className="description">The shaded area on the map is what you can see at eye level, {formatDistance(view.altitude - view.ground_altitude)} above the ground, before buildings, trees or terrain block the view.</p><dl className="view-stats"><div><dt>Eye altitude</dt><dd>{Math.round(view.altitude)} m</dd></div><div><dt>Average sightline</dt><dd>{formatDistance(view.average_distance)}</dd></div><div><dt>Farthest sightline</dt><dd>{formatDistance(Math.max(...hits.map(p => p.distance)))}</dd></div><div><dt>Open directions</dt><dd>{Math.round(unobstructedShare * 100)}%</dd></div></dl>{unobstructedShare > 0 && <p className="view-legend"><span className="legend-dot" />Nothing blocks the view in these directions; they are drawn at the average sightline.</p>}</>}</div>
           </div><div className="panel-footer">A different view is just a click away.<span>⌖</span></div>
         </aside>}
       </main>

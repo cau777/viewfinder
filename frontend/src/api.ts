@@ -1,30 +1,32 @@
 export type Coordinates = { latitude: number; longitude: number }
-export type ViewDescription = { title: string; description: string; tags: string[] }
+export type ViewPoint = Coordinates & {
+  /** Degrees clockwise from north */
+  bearing: number
+  /** Metres from the observer */
+  distance: number
+  /** The ray hit nothing; its distance is limited to the average sightline */
+  unobstructed: boolean
+}
+export type View = Coordinates & {
+  ground_altitude: number
+  /** Altitude of the observer's eyes, metres */
+  altitude: number
+  /** Mean distance of the rays that hit the surface, metres */
+  average_distance: number
+  /** Where each ray around the observer ends: the vertices of the visible area */
+  points: ViewPoint[]
+}
 
-// Replace this adapter with a POST to the view API when it is available.
-// Its coordinate input and AbortSignal can be passed directly to fetch.
-export async function describeView(point: Coordinates, signal: AbortSignal): Promise<ViewDescription> {
-  await new Promise<void>((resolve, reject) => {
-    const abort = () => { clearTimeout(timer); reject(new DOMException('Request cancelled', 'AbortError')) }
-    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve() }, 1100)
-    if (signal.aborted) abort()
-    else signal.addEventListener('abort', abort, { once: true })
+export async function fetchView(point: Coordinates, signal: AbortSignal): Promise<View> {
+  const response = await fetch('/api/view', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(point),
+    signal,
   })
-  if (point.latitude > 49.3 && point.longitude < -123.13) return {
-    title: 'Between forest & sea',
-    description: 'Imagine a quiet coastal outlook: tall evergreens frame a stretch of water, with the North Shore mountains rising in the distance. Along the shoreline, walkers and cyclists follow the curve of the seawall. This sample evokes Vancouver’s forested waterfront; the actual view at your pin may differ.',
-    tags: ['Coastal', 'Evergreens', 'Mountain backdrop'],
-  }
-  if (point.latitude < 49.278 && point.longitude < -123.13) return {
-    title: 'A waterfront perspective',
-    description: 'Picture the water opening up in front of you, broken by small boats and reflections of the city skyline. The shoreline brings together low buildings, waterfront paths, and pockets of greenery. This is an imagined Vancouver waterfront scene, rather than a verified view from this spot.',
-    tags: ['Waterfront', 'City skyline', 'Open skies'],
-  }
-  return {
-    title: 'The city, from here',
-    description: 'Picture Vancouver’s glass towers catching the light above a lively streetscape. Trees soften the edges of the city, and between the buildings you might glimpse the mountains that surround it. This illustrative scene captures the feel of Vancouver; a future location service will describe the actual surroundings at your pin.',
-    tags: ['Urban', 'Architecture', 'Mountain backdrop'],
-  }
+  const body = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Unable to load this view.')
+  return body as View
 }
 
 export type AddressResult = Coordinates & { label: string }

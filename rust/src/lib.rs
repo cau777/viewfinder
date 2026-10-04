@@ -10,6 +10,7 @@ use pyo3::prelude::*;
 use crate::grid::{CellContents, FullGrid, MISSING};
 use crate::ray_collisions::{ray_collisions, ray_collisions_around, RayCastResult};
 use crate::ray_tracing::get_intersection_points;
+use crate::util::Coordinates;
 
 #[pyclass(module = "viewfinder_core._native")]
 #[derive(Debug)]
@@ -215,7 +216,7 @@ impl RayTracer {
     /// `vertical_resolution` `RayResult`s from the lowest elevation to the highest.
     #[allow(clippy::too_many_arguments)]
     fn ray_collisions_around(
-        &self, x: f64, y: f64, observer_altitude: f64,
+        &self, py: Python<'_>, x: f64, y: f64, observer_altitude: f64,
         min_elevation: f64, max_elevation: f64, vertical_resolution: usize,
         min_horizontal_angle: f64, max_horizontal_angle: f64, horizontal_resolution: usize,
     ) -> PyResult<Vec<Vec<RayResult>>> {
@@ -226,10 +227,11 @@ impl RayTracer {
         if vertical_resolution == 0 {
             return Ok(vec![vec![]; horizontal_resolution]);
         }
-        let results = ray_collisions_around(
+        // Pure Rust: let other Python threads (e.g. other requests) run meanwhile
+        let results = py.detach(|| ray_collisions_around(
             &self.grid, Vector2::new(x, y), observer_altitude, max_elevation, min_elevation,
             vertical_resolution, min_horizontal_angle, max_horizontal_angle, horizontal_resolution,
-        );
+        ));
         Ok(results
             .chunks(vertical_resolution)
             .map(|column| column.iter().map(|&r| r.into()).collect())
@@ -261,12 +263,30 @@ impl RayTracer {
     }
 }
 
+/// latlon_to_utm(latitude, longitude)
+///
+/// UTM zone 10N (EPSG:26910) `(x, y)` in metres of a NAD83 latitude and longitude in degrees.
+#[pyfunction]
+fn latlon_to_utm(latitude: f64, longitude: f64) -> (f64, f64) {
+    let utm = Coordinates { latitude, longitude }.to_utm();
+    (utm.x, utm.y)
+}
+
+/// utm_to_latlon(x, y)
+///
+/// NAD83 `(latitude, longitude)` in degrees of UTM zone 10N (EPSG:26910) metres.
+#[pyfunction]
+fn utm_to_latlon(x: f64, y: f64) -> (f64, f64) {
+    let coordinates = Coordinates::from_utm(x, y);
+    (coordinates.latitude, coordinates.longitude)
+}
+
 /// Native core of viewfinder (Rust, via PyO3).
 // Declarative (inline) module: required for `experimental-inspect` stub generation.
 #[pymodule]
 mod _native {
     #[pymodule_export]
-    use super::{GridStats, RayResult, RayTracer};
+    use super::{latlon_to_utm, utm_to_latlon, GridStats, RayResult, RayTracer};
 
     #[allow(non_upper_case_globals)]
     #[pymodule_export]
