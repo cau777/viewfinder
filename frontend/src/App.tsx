@@ -47,8 +47,12 @@ export default function App() {
   useEffect(() => {
     if (!container.current) return
     const instance = L.map(container.current, { zoomControl: false, renderer: L.canvas(), maxBounds: LIDAR_BOUNDS, maxBoundsViscosity: 1 }).setView(VANCOUVER, 13)
-    // Can't zoom out past the whole LiDAR area
-    const fitMinZoom = () => instance.setMinZoom(instance.getBoundsZoom(LIDAR_BOUNDS))
+    // Keep the entire viewport inside coverage, even on wide screens or after resizing.
+    // `inside: true` finds the zoom at which the viewport fits within the data bounds.
+    const fitMinZoom = () => {
+      instance.setMinZoom(instance.getBoundsZoom(LIDAR_BOUNDS, true))
+      instance.panInsideBounds(LIDAR_BOUNDS, { animate: false })
+    }
     fitMinZoom()
     instance.on('resize', fitMinZoom)
     map.current = instance
