@@ -323,7 +323,7 @@ impl FullGrid {
         self.altitude(row, column)
     }
 
-    /// ASPRS class (most common among the point's LiDAR returns) of the point nearest to UTM (x, y).
+    /// ASPRS class (of its highest LiDAR return that is not unassigned) of the point nearest to UTM (x, y).
     /// None if it has no data, is outside the grid, or the export has no classes.
     pub fn class_at(&self, x: f64, y: f64) -> Option<u8> {
         let (row, column) = self.row_column_at(x, y)?;
