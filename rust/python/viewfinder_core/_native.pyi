@@ -38,6 +38,69 @@ class GridStats:
         Approximate heap bytes used by the tree.
         """
 
+class RayResult:
+    """
+    Where one ray of `RayTracer.ray_collisions_around()` ends. Horizontal angles are radians
+    clockwise from north, elevation angles radians above the horizontal.
+    """
+    def __repr__(self, /) -> str: ...
+    @final
+    class Collision(RayResult):
+        """
+        The ray hit the surface.
+        """
+        __match_args__: Final = ("distance", "vertical_angle", "horizontal_angle", "x", "y", "altitude_ray", "altitude_at_collision")
+        def __new__(cls, /, distance: float, vertical_angle: float, horizontal_angle: float, x: float, y: float, altitude_ray: float, altitude_at_collision: float) -> RayResult.Collision: ...
+        @property
+        def altitude_at_collision(self, /) -> float:
+            """
+            Altitude of the surface at the point hit, metres.
+            """
+        @property
+        def altitude_ray(self, /) -> float:
+            """
+            Altitude of the ray where it hit, metres.
+            """
+        @property
+        def distance(self, /) -> float:
+            """
+            Distance travelled by the ray (along the slope), metres.
+            """
+        @property
+        def horizontal_angle(self, /) -> float:
+            """
+            Horizontal angle of the ray, radians clockwise from north.
+            """
+        @property
+        def vertical_angle(self, /) -> float:
+            """
+            Elevation angle of the ray, radians.
+            """
+        @property
+        def x(self, /) -> float:
+            """
+            UTM (EPSG:26910) x of the centre of the point hit.
+            """
+        @property
+        def y(self, /) -> float:
+            """
+            UTM (EPSG:26910) y of the centre of the point hit.
+            """
+    @final
+    class Ocean(RayResult):
+        """
+        Pointing down and left the dataset without hitting anything (no points over open water).
+        """
+        __match_args__: Final = ()
+        def __new__(cls, /) -> RayResult.Ocean: ...
+    @final
+    class Sky(RayResult):
+        """
+        Pointing up and left the dataset without hitting anything.
+        """
+        __match_args__: Final = ()
+        def __new__(cls, /) -> RayResult.Sky: ...
+
 @final
 class RayTracer:
     def __new__(cls, /, path: str |PathLike[str]) -> RayTracer:
@@ -90,6 +153,15 @@ class RayTracer:
         at elevation angles (radians) evenly spaced from `min_elevation` to `max_elevation`, both included.
         Returns one value per angle, lowest first: the distance in metres the ray travels before hitting
         the surface, `inf` if it probably reaches the sky, or `-inf` if it probably reaches the ocean.
+        """
+    def ray_collisions_around(self, /, x: float, y: float, observer_altitude: float, min_elevation: float, max_elevation: float, vertical_resolution: int, min_horizontal_angle: float, max_horizontal_angle: float, horizontal_resolution: int) -> list[list[RayResult]]:
+        """
+        ray_collisions_around(x, y, observer_altitude, min_elevation, max_elevation, vertical_resolution, min_horizontal_angle, max_horizontal_angle, horizontal_resolution)
+        
+        `ray_collisions` for `horizontal_resolution` horizontal angles (radians clockwise from north)
+        evenly spaced from `min_horizontal_angle` (included) to `max_horizontal_angle` (excluded), so
+        0 to 2π is the full circle. Returns one list per horizontal angle, each with
+        `vertical_resolution` `RayResult`s from the lowest elevation to the highest.
         """
     @property
     def rows(self, /) -> int:
