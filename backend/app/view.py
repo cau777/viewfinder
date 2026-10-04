@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from viewfinder_core import RayResult, RayTracer, latlon_to_utm, utm_to_latlon
 from shapely.geometry import Polygon
 from analysis import analyze
-border_points = []
-nonborder_points = []
 
 # Extra elevation of the observer above the surface at the point, metres (roughly eye level)
 OBSERVER_HEIGHT = 2.5
@@ -83,7 +81,9 @@ def thin_points(points: list[ViewPoint], minimum_distance: float = 0.5) -> list[
     return kept if len(kept) >= 3 else points
 
 def compute_polygon(results, x, y, bearings, average_distance):
-    polygon_points = []  
+    polygon_points = []
+    border_points = []
+    nonborder_points = []
 
     for i, result in enumerate(results):
         bearing = 360 * i / bearings
@@ -106,7 +106,7 @@ def compute_polygon(results, x, y, bearings, average_distance):
 
     coordinates = [(long, lat) for lat, long in polygon_points]
 
-    return Polygon(coordinates)
+    return Polygon(coordinates), border_points, nonborder_points
 
 def observer_position(tracer: RayTracer, latitude: float, longitude: float) -> tuple[float, float, float]:
     """UTM x, y and ground altitude of a position; the observer's eyes are `OBSERVER_HEIGHT` above it."""
@@ -130,7 +130,7 @@ def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings:
         raise NoObstructionError("No ray hits the surface around this position")
     average_distance = sum(distances) / len(distances)
 
-    polygon = compute_polygon(
+    polygon, border_points, nonborder_points = compute_polygon(
     results,
     x,
     y,
