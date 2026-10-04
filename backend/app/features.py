@@ -59,7 +59,7 @@ def sunrise_score(border_points, points, sunrise_azimuth):
 
     total_points_within_interval = border_within_interval + nonborder_within_interval
 
-    return (100 * border_within_interval) / total_points_within_interval if total_points_within_interval > 0 else 0
+    return (border_within_interval) / total_points_within_interval if total_points_within_interval > 0 else 0
 
 def sunset_score(border_points, points, sunset_azimuth):
     lower, _, upper = sunset_azimuth
@@ -76,7 +76,7 @@ def sunset_score(border_points, points, sunset_azimuth):
 
     total_points_within_interval = border_within_interval + nonborder_within_interval
 
-    return (100 * border_within_interval) / total_points_within_interval if total_points_within_interval > 0 else 0
+    return (border_within_interval) / total_points_within_interval if total_points_within_interval > 0 else 0
 
 ### OCEAN
 

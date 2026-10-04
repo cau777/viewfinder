@@ -37,7 +37,7 @@ export default function HelpModal({ opened, onClose }: { opened: boolean; onClos
     <section aria-labelledby="help-score"><h2 id="help-score">Beauty score</h2>
       <p>An experimental composite of view area, water, landmarks and sun-direction openness. It reflects the project’s chosen weights rather than a universal measure of beauty.</p>
       <div className="help-table-wrap"><table className="help-score-table"><caption>Contributions to the beauty score</caption><thead><tr><th scope="col">Component</th><th scope="col">How points are assigned</th><th scope="col">Maximum</th></tr></thead><tbody>
-        <tr><th scope="row">Openness</th><td>Analysis polygon area scales from 0 points at 1,000 m² to 100 points at 3,500,000 m².</td><td>100</td></tr>
+        <tr><th scope="row">Openness</th><td>Analysis polygon area scales from 0 points at 1,000 m² to 75 points at 3,500,000 m².</td><td>75</td></tr>
         <tr><th scope="row">Water</th><td>Ocean plus lake overlap scales up to 1,750,000 m².</td><td>20</td></tr>
         <tr><th scope="row">Landmarks</th><td>2 points per intersecting landmark, up to five.</td><td>10</td></tr>
         <tr><th scope="row">Sunrise</th><td>The open fraction around the sunrise bearing × 10.</td><td>10</td></tr>
