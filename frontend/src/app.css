@@ -199,3 +199,7 @@ h1{font-size:23px}
 .help-score-table thead{background:var(--color-card)}.help-score-table th{font-weight:500}.help-score-table td{color:var(--color-muted)}
 .help-done{display:block;margin:24px 0 0 auto;border:0;border-radius:8px;padding:10px 20px;background:var(--color-accent);color:var(--color-background);font-size:12px}
 @media(max-width:700px){.help-button{margin-left:auto}.help-header{padding:16px 18px}.help-body{padding:18px}.help-title{font-size:20px}}
+
+.landmark-list .landmark-badge{display:flex;align-items:center;gap:7px;max-width:100%}
+.landmark-icon{width:16px;height:16px;flex:none;color:var(--color-accent-2)}
+.landmark-badge span{min-width:0;overflow-wrap:anywhere}

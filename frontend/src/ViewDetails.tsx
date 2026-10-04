@@ -1,4 +1,5 @@
 import type { SunInfo, View } from './api'
+import LandmarkBadge from './LandmarkBadge'
 
 function distance(metres: number) {
   return metres < 1000 ? `${Math.round(metres)} m` : `${(metres / 1000).toFixed(1)} km`
@@ -37,7 +38,7 @@ export default function ViewDetails({ view }: { view: View }) {
     <h3 className="view-section-heading">Ocean</h3>
     <div className="ocean-card"><span>Overlap with view area</span><strong>{analysis ? `${(analysis.ocean_area / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 3 })} km²` : '—'}</strong></div>
     <h3 className="view-section-heading">Landmarks in the view area{analysis ? ` · ${analysis.landmarks.length}` : ''}</h3>
-    {analysis ? analysis.landmarks.length ? <ul className="landmark-list">{analysis.landmarks.map((name, index) => <li key={`${name}-${index}`}>{name}</li>)}</ul> : <p className="detail-note">No landmarks intersect this view area.</p> : <p className="detail-note">Landmark analysis unavailable.</p>}
+    {analysis ? analysis.landmarks.length ? <ul className="landmark-list">{analysis.landmarks.map((name, index) => <LandmarkBadge key={`${name}-${index}`} name={name} />)}</ul> : <p className="detail-note">No landmarks intersect this view area.</p> : <p className="detail-note">Landmark analysis unavailable.</p>}
     <details className="view-method"><summary>Elevation & method</summary>
       <dl className="method-stats"><div><dt>Ground altitude</dt><dd>{view.ground_altitude.toFixed(1)} m</dd></div><div><dt>Eye altitude</dt><dd>{view.altitude.toFixed(1)} m</dd></div><div><dt>Height above surface</dt><dd>{(view.altitude - view.ground_altitude).toFixed(1)} m</dd></div></dl>
       <p className="detail-note">Horizontal LiDAR rays approximate visibility at eye level. Open directions leave the dataset without a collision; visibility beyond its coverage is unknown.</p>
