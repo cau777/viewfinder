@@ -51,6 +51,8 @@ class ViewResponse(BaseModel):
     ground_altitude: float
     altitude: float
     average_distance: float
+    farthest_distance: float
+    unobstructed_share: float
     points: list[ViewPoint]
 
 

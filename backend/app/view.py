@@ -41,6 +41,35 @@ class View:
     """Mean distance of the rays that hit the surface, metres."""
     points: list[ViewPoint]
     """Where each ray ends, by bearing: the vertices of the visible area."""
+    farthest_distance: float
+    unobstructed_share: float
+
+
+def thin_points(points: list[ViewPoint], minimum_distance: float = 0.5) -> list[ViewPoint]:
+    """Drop nearby vertices, preserving open/blocked boundaries and at least one ray per degree.
+
+    Open rays are extrapolated by the client, so their angular coverage must be retained.
+    Keep both sides of the ring seam and never collapse a polygon below three vertices.
+    """
+    if len(points) <= 3:
+        return points
+
+    def xy(point: ViewPoint) -> tuple[float, float]:
+        angle = math.radians(point.bearing)
+        return point.distance * math.sin(angle), point.distance * math.cos(angle)
+
+    kept = [points[0]]
+    for i, point in enumerate(points[1:-1], 1):
+        previous = kept[-1]
+        transition = (point.unobstructed != points[i - 1].unobstructed
+                      or point.unobstructed != points[i + 1].unobstructed)
+        x, y = xy(point)
+        last_x, last_y = xy(previous)
+        if (transition or point.bearing - previous.bearing >= 1
+                or (not point.unobstructed and math.hypot(x - last_x, y - last_y) >= minimum_distance)):
+            kept.append(point)
+    kept.append(points[-1])
+    return kept if len(kept) >= 3 else points
 
 
 def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings: int) -> View:
@@ -70,4 +99,5 @@ def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings:
             end = utm_to_latlon(x + average_distance * math.sin(radians), y + average_distance * math.cos(radians))
             points.append(ViewPoint(bearing, *end, average_distance, True))
 
-    return View(latitude, longitude, ground_altitude, altitude, average_distance, points)
+    return View(latitude, longitude, ground_altitude, altitude, average_distance,
+                thin_points(points), max(distances), (len(results) - len(distances)) / len(results))

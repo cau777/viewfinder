@@ -91,3 +91,34 @@ def test_nothing_hit_is_422():
 def test_invalid_parameters_are_422():
     assert client.post("/api/view", json={"latitude": 100, "longitude": 0}).status_code == 422
     assert client.post("/api/view", json={"latitude": 49.28, "longitude": -123.12, "bearings": 2}).status_code == 422
+
+
+def test_dense_view_is_thinned_without_changing_statistics():
+    dense = post_view(*OBSERVER, bearings=1440).json()
+    sparse = post_view(*OBSERVER, bearings=360).json()
+    assert 3 <= len(dense['points']) < 1440
+    assert dense['farthest_distance'] >= max(p['distance'] for p in dense['points'] if not p['unobstructed'])
+    assert dense['unobstructed_share'] == pytest.approx(sparse['unobstructed_share'], abs=0.01)
+    assert dense['average_distance'] == pytest.approx(sparse['average_distance'], rel=0.02)
+    assert [p['bearing'] for p in dense['points']] == sorted(p['bearing'] for p in dense['points'])
+
+
+def test_thinning_preserves_transitions_seam_and_small_polygons():
+    from app.view import ViewPoint, thin_points
+    points = [ViewPoint(i * 0.25, 49.28, -123.12, 1, i in (3, 4)) for i in range(12)]
+    result = thin_points(points)
+    assert points[0] in result and points[-1] in result
+    assert all(points[i] in result for i in (2, 3, 4, 5))
+    assert len(result) < len(points)
+    assert thin_points(points[:3]) == points[:3]
+
+
+def test_thinning_keeps_sharp_distance_changes_and_open_angular_coverage():
+    from app.view import ViewPoint, thin_points
+    points = [ViewPoint(i * 0.25, 49.28, -123.12, 10 if i == 5 else 1, False) for i in range(12)]
+    result = thin_points(points)
+    assert points[5] in result and points[6] in result
+    open_points = [ViewPoint(i * 0.25, 49.28, -123.12, 0.1, True) for i in range(1440)]
+    thinned = thin_points(open_points)
+    assert len(thinned) == 361
+    assert all(b.bearing - a.bearing <= 1 for a, b in zip(thinned, thinned[1:]))

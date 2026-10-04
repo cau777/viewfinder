@@ -13,6 +13,9 @@ export type View = Coordinates & {
   altitude: number
   /** Mean distance of the rays that hit the surface, metres */
   average_distance: number
+  /** Statistics from all rays before polygon vertices are thinned. */
+  farthest_distance?: number
+  unobstructed_share?: number
   /** Where each ray around the observer ends: the vertices of the visible area */
   points: ViewPoint[]
 }
