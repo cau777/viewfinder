@@ -46,10 +46,10 @@ pub enum RayResult {
         vertical_angle: f64,
         /// Horizontal angle of the ray, radians clockwise from north.
         horizontal_angle: f64,
-        /// UTM (EPSG:26910) x of the centre of the point hit.
-        x: f64,
-        /// UTM (EPSG:26910) y of the centre of the point hit.
-        y: f64,
+        /// Latitude of the centre of the point hit, degrees.
+        latitude: f64,
+        /// Longitude of the centre of the point hit, degrees.
+        longitude: f64,
         /// Altitude of the ray where it hit, metres.
         altitude_ray: f64,
         /// Altitude of the surface at the point hit, metres.
@@ -67,7 +67,7 @@ impl From<RayCastResult> for RayResult {
             RayCastResult::Collision { distance, vertical_angle, horizontal_angle, coordinates, altitude_ray, altitude_at_collision } => {
                 RayResult::Collision {
                     distance, vertical_angle, horizontal_angle,
-                    x: coordinates.0.x, y: coordinates.0.y,
+                    latitude: coordinates.latitude, longitude: coordinates.longitude,
                     altitude_ray, altitude_at_collision,
                 }
             }

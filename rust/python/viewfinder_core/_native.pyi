@@ -49,8 +49,8 @@ class RayResult:
         """
         The ray hit the surface.
         """
-        __match_args__: Final = ("distance", "vertical_angle", "horizontal_angle", "x", "y", "altitude_ray", "altitude_at_collision")
-        def __new__(cls, /, distance: float, vertical_angle: float, horizontal_angle: float, x: float, y: float, altitude_ray: float, altitude_at_collision: float) -> RayResult.Collision: ...
+        __match_args__: Final = ("distance", "vertical_angle", "horizontal_angle", "latitude", "longitude", "altitude_ray", "altitude_at_collision")
+        def __new__(cls, /, distance: float, vertical_angle: float, horizontal_angle: float, latitude: float, longitude: float, altitude_ray: float, altitude_at_collision: float) -> RayResult.Collision: ...
         @property
         def altitude_at_collision(self, /) -> float:
             """
@@ -72,19 +72,19 @@ class RayResult:
             Horizontal angle of the ray, radians clockwise from north.
             """
         @property
+        def latitude(self, /) -> float:
+            """
+            Latitude of the centre of the point hit, degrees.
+            """
+        @property
+        def longitude(self, /) -> float:
+            """
+            Longitude of the centre of the point hit, degrees.
+            """
+        @property
         def vertical_angle(self, /) -> float:
             """
             Elevation angle of the ray, radians.
-            """
-        @property
-        def x(self, /) -> float:
-            """
-            UTM (EPSG:26910) x of the centre of the point hit.
-            """
-        @property
-        def y(self, /) -> float:
-            """
-            UTM (EPSG:26910) y of the centre of the point hit.
             """
     @final
     class Ocean(RayResult):

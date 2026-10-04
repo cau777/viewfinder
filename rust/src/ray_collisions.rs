@@ -18,7 +18,7 @@ pub enum RayCastResult {
         vertical_angle: f64,
         /// Horizontal direction of the ray, radians clockwise from north
         horizontal_angle: f64,
-        /// UTM centre of the point the ray hit
+        /// Latitude and longitude of the centre of the point the ray hit
         coordinates: Coordinates,
         /// Altitude of the ray when it hit the object
         /// Example: if the ray hit the third floor of a skyscraper, this would be the height of the third floor
@@ -79,7 +79,7 @@ pub fn ray_collisions(grid: &FullGrid,
                             distance: distance / angle.cos(),
                             vertical_angle: angle,
                             horizontal_angle,
-                            coordinates: Coordinates(point.position),
+                            coordinates: Coordinates::from_utm(point.position.x, point.position.y),
                             altitude_ray: ray_altitude,
                             altitude_at_collision: point_altitude,
                         };
@@ -236,10 +236,11 @@ mod tests {
                 };
                 assert_eq!((vertical_angle, horizontal_angle), (angle, EAST));
                 assert_eq!(altitude_at_collision, expected_altitude);
-                // The ray is at or below the surface where it hits, and the hit is on the ray's line
+                // The ray is at or below the surface where it hits, and the hit is the cell entered there
                 assert!(altitude_ray <= altitude_at_collision);
-                assert!((coordinates.0.y - observer.y).abs() < 1e-9);
-                assert!((coordinates.0.x - observer.x - got * angle.cos()).abs() <= 0.25 + 1e-9);
+                // The observer is on the centre line of a row, so the hit cell's centre is half a cell past the entry
+                let entry = observer.x + got * angle.cos();
+                assert_eq!(coordinates, Coordinates::from_utm(entry + 0.25, observer.y));
             } else {
                 assert_eq!(result, ProbablySky, "angle {angle}");
             }
@@ -308,7 +309,7 @@ mod tests {
                             distance: p.top_distance_to_observer / angle.cos(),
                             vertical_angle: angle,
                             horizontal_angle: bearing,
-                            coordinates: Coordinates(p.position),
+                            coordinates: Coordinates::from_utm(p.position.x, p.position.y),
                             altitude_ray: 25.0 + p.top_distance_to_observer * angle.tan(),
                             altitude_at_collision: p.altitude.unwrap(),
                         },
