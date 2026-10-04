@@ -11,6 +11,7 @@ export default function App() {
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
   const marker = useRef<L.Marker | null>(null)
+  const [satellite, setSatellite] = useState(false)
   const [point, setPoint] = useState<Coordinates | null>(null)
   const [view, setView] = useState<ViewDescription | null>(null)
   const [loading, setLoading] = useState(false)
@@ -22,13 +23,6 @@ export default function App() {
     if (!container.current) return
     const instance = L.map(container.current, { zoomControl: false }).setView(VANCOUVER, 13)
     map.current = instance
-    const key = __CARTO_API_KEY__
-    const tiles = L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(key)}`, {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      maxZoom: 20,
-    }).addTo(instance)
-    tiles.on('tileerror', () => setMapError(true))
-    tiles.on('tileload', () => setMapError(false))
     instance.on('click', ({ latlng }: L.LeafletMouseEvent) => {
       marker.current?.remove()
       marker.current = L.marker(latlng, { icon: pinIcon }).addTo(instance)
@@ -36,6 +30,26 @@ export default function App() {
     })
     return () => { instance.remove(); map.current = null; marker.current = null }
   }, [])
+
+  useEffect(() => {
+    const instance = map.current
+    if (!instance) return
+    setMapError(false)
+    const tiles = satellite
+      ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> — Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+          maxNativeZoom: 19,
+          maxZoom: 20,
+        })
+      : L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(__CARTO_API_KEY__)}`, {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          maxZoom: 20,
+        })
+    tiles.on('tileerror', () => setMapError(true))
+    tiles.on('tileload', () => setMapError(false))
+    tiles.addTo(instance)
+    return () => { tiles.off(); tiles.remove() }
+  }, [satellite])
 
   useEffect(() => {
     if (!point) return
@@ -73,7 +87,11 @@ export default function App() {
       <main className="map-shell">
         <div ref={container} className="map" aria-label="Interactive map of Vancouver. Click a location to discover its view." />
         <section className="map-intro"><span className="eyebrow">EXPLORE YOUR PERSPECTIVE</span><h1>Every place has a view.</h1><p>Drop a pin. Discover what’s around you.</p></section>
-        {mapError && <div className="map-error" role="alert">Map tiles could not load. Check your connection and CARTO basemap key.</div>}
+        {mapError && <div className="map-error" role="alert">{satellite ? 'Satellite imagery could not load. Check your connection or switch to the street map.' : 'Map tiles could not load. Check your connection and CARTO basemap key.'}</div>}
+        <div className="basemap-toggle" role="group" aria-label="Map style">
+          <button type="button" aria-pressed={!satellite} onClick={() => setSatellite(false)}>Map</button>
+          <button type="button" aria-pressed={satellite} onClick={() => setSatellite(true)}>Satellite</button>
+        </div>
         <div className="map-controls">
           <button onClick={() => map.current?.zoomIn()} aria-label="Zoom in">+</button>
           <button onClick={() => map.current?.zoomOut()} aria-label="Zoom out">−</button>
