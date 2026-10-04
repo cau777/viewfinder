@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from viewfinder_core import RayTracer
 from app.view import NoDataError, NoObstructionError, compute_view, panorama_png
 
+from app.analysis import analyze
+
 app = FastAPI(title="viewfinder", version="0.1.0")
 
 # The u16 LiDAR export (index.csv + <NAME>.u16 files)
