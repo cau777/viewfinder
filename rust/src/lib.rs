@@ -3,8 +3,11 @@ pub mod ray_tracing;
 pub mod util;
 
 use std::path::PathBuf;
+use nalgebra::Vector2;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use crate::grid::{CellContents, FullGrid, MISSING};
+use crate::ray_tracing::get_intersection_points;
 
 #[pyclass(module = "viewfinder_core._native")]
 #[derive(Debug)]
@@ -97,6 +100,19 @@ impl RayTracer {
     /// Altitude in metres of the point nearest to UTM (x, y), None if it has no data.
     fn altitude_at(&self, x: f64, y: f64) -> Option<f64> {
         self.grid.altitude_at(x, y)
+    }
+
+    /// cast_ray(x, y, direction_x, direction_y)
+    ///
+    /// Points whose cell a horizontal ray from UTM (x, y) crosses, ignoring altitude, nearest first.
+    /// Returns `(x, y, altitude)` per point; altitude is None where a point has no data.
+    fn cast_ray(&self, x: f64, y: f64, direction_x: f64, direction_y: f64) -> PyResult<Vec<(f64, f64, Option<f64>)>> {
+        let direction = Vector2::new(direction_x, direction_y);
+        if direction.norm() == 0.0 || !direction.norm().is_finite() {
+            return Err(PyValueError::new_err("direction must be a finite, non-zero vector"));
+        }
+        let hits = get_intersection_points(&self.grid, Vector2::new(x, y), direction.normalize());
+        Ok(hits.into_iter().map(|h| (h.position.x, h.position.y, h.altitude)).collect())
     }
 
     /// Walk the tree and count nodes, points and memory.

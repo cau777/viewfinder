@@ -60,6 +60,13 @@ class RayTracer:
         """
         Altitude in metres of the point nearest to UTM (x, y), None if it has no data.
         """
+    def cast_ray(self, /, x: float, y: float, direction_x: float, direction_y: float) -> list[tuple[float, float, float |None]]:
+        """
+        cast_ray(x, y, direction_x, direction_y)
+        
+        Points whose cell a horizontal ray from UTM (x, y) crosses, ignoring altitude, nearest first.
+        Returns `(x, y, altitude)` per point; altitude is None where a point has no data.
+        """
     @property
     def cell_size(self, /) -> float:
         """
