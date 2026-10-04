@@ -16,6 +16,9 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--color-accent-2);out
 .country{font-size:9px;letter-spacing:1.5px;color:var(--color-muted);margin-left:7px}
 .map-shell{position:relative;flex:1;min-height:0;overflow:hidden}
 .map{position:absolute;inset:0;background:#15181c;z-index:0}
+/* Darken Voyager while retaining muted blue water and green park hues.
+   Scope to street tiles so satellite imagery and map overlays keep their colors. */
+.coastal-basemap{filter:invert(1) hue-rotate(180deg) saturate(.45) brightness(.8) contrast(.85)}
 .leaflet-container{font-family:inherit;cursor:crosshair}
 .leaflet-control-attribution{background:var(--color-background)!important;color:var(--color-muted)!important;font-size:10px!important;padding:5px 10px!important}
 .leaflet-control-attribution a{color:var(--color-muted)!important}

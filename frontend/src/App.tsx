@@ -69,7 +69,8 @@ export default function App() {
           maxNativeZoom: 19,
           maxZoom: 20,
         })
-      : L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(__CARTO_API_KEY__)}`, {
+      : L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(__CARTO_API_KEY__)}`, {
+          className: 'coastal-basemap',
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
           maxZoom: 20,
         })
