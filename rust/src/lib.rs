@@ -62,10 +62,8 @@ pub enum RayResult {
         /// None if the dataset has no classes.
         classification: Option<u8>,
     },
-    /// Pointing up and left the dataset without hitting anything.
-    Sky {},
-    /// Pointing down and left the dataset without hitting anything (no points over open water).
-    Ocean {},
+    /// Left the dataset without hitting a surface.
+    NoCollision {},
 }
 
 impl From<RayCastResult> for RayResult {
@@ -78,8 +76,7 @@ impl From<RayCastResult> for RayResult {
                     altitude_ray, altitude_at_collision, classification: class,
                 }
             }
-            RayCastResult::ProbablySky => RayResult::Sky {},
-            RayCastResult::ProbablyOcean => RayResult::Ocean {},
+            RayCastResult::NoCollision => RayResult::NoCollision {},
         }
     }
 }
@@ -187,7 +184,7 @@ impl RayTracer {
     /// Casts `resolution` rays from UTM (x, y) at `observer_altitude` metres, in one horizontal direction,
     /// at elevation angles (radians) evenly spaced from `min_elevation` to `max_elevation`, both included.
     /// Returns one value per angle, lowest first: the distance in metres the ray travels before hitting
-    /// the surface, `inf` if it probably reaches the sky, or `-inf` if it probably reaches the ocean.
+    /// the surface, or `inf` if it leaves the dataset without a collision.
     #[allow(clippy::too_many_arguments)]
     fn ray_collisions(
         &self, x: f64, y: f64, direction_x: f64, direction_y: f64,
@@ -208,8 +205,7 @@ impl RayTracer {
             .into_iter()
             .map(|r| match r {
                 RayCastResult::Collision { distance, .. } => distance,
-                RayCastResult::ProbablySky => f64::INFINITY,
-                RayCastResult::ProbablyOcean => f64::NEG_INFINITY,
+                RayCastResult::NoCollision => f64::INFINITY,
             })
             .collect())
     }

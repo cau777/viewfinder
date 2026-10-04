@@ -43,9 +43,7 @@ fn ray_colour(result: &RayCastResult, elevation: f64) -> Rgb {
         RayCastResult::Collision { distance, class, .. } => {
             mix(class_colour(class), HAZE, 1.0 - (-distance / HAZE_DISTANCE).exp())
         }
-        RayCastResult::ProbablySky => mix(SKY_HORIZON, SKY_ZENITH, (elevation / SKY_GRADIENT).clamp(0.0, 1.0)),
-        // Left the dataset looking down: the water beyond the coast, far away
-        RayCastResult::ProbablyOcean => mix(WATER, HAZE, 0.5),
+        RayCastResult::NoCollision => mix(SKY_HORIZON, SKY_ZENITH, (elevation / SKY_GRADIENT).clamp(0.0, 1.0)),
     }
 }
 
@@ -204,6 +202,16 @@ mod tests {
         let below = pixel(&image, width, first_building_row + 1, east);
         assert!(close(below, hazed(Some(6), 19.6)));
         assert!(close(edge, hazed(Some(6), 19.6).map(|c| (c as f64 * EDGE_DARKEN).round() as u8)));
+    }
+
+    #[test]
+    fn no_collision_uses_sky_even_below_the_horizon() {
+        for elevation in [-0.5, -0.01, 0.0, 0.25, 0.5] {
+            assert_eq!(
+                ray_colour(&RayCastResult::NoCollision, elevation),
+                mix(SKY_HORIZON, SKY_ZENITH, (elevation / SKY_GRADIENT).clamp(0.0, 1.0)),
+            );
+        }
     }
 
     #[test]

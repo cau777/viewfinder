@@ -144,7 +144,7 @@ def compute_view(tracer: RayTracer, latitude: float, longitude: float, bearings:
         if isinstance(result, RayResult.Collision):
             points.append(ViewPoint(bearing, result.latitude, result.longitude, result.distance, False))
         else:
-            # Left the dataset: at elevation 0 it points at the sky (or past the edge of the data)
+            # Left the dataset without a collision
             radians = math.radians(bearing)
             end = utm_to_latlon(x + average_distance * math.sin(radians), y + average_distance * math.cos(radians))
             points.append(ViewPoint(bearing, *end, average_distance, True))

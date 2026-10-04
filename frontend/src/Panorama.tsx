@@ -14,11 +14,12 @@ type Props = {
   initialBearing: number | null
   /** Shown while the image loads, and if it fails (no data at the point, server error) */
   fallback: ReactNode
+  onLoad: (point: Coordinates) => void
 }
 
 /** The 360° panorama around a point, dragged sideways to look around. It wraps at north: the image
  * repeats, and the offset is kept within one turn. */
-export default function Panorama({ point, initialBearing, fallback }: Props) {
+export default function Panorama({ point, initialBearing, fallback, onLoad }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; offset: number } | null>(null)
   const centred = useRef(false)
@@ -34,11 +35,16 @@ export default function Panorama({ point, initialBearing, fallback }: Props) {
   useEffect(() => {
     let cancelled = false
     const preload = new Image()
-    preload.onload = () => { if (!cancelled) setLoaded({ url, aspect: preload.naturalWidth / preload.naturalHeight }) }
+    preload.onload = () => {
+      if (!cancelled) {
+        setLoaded({ url, aspect: preload.naturalWidth / preload.naturalHeight })
+        onLoad(point)
+      }
+    }
     preload.src = url
     centred.current = false
     return () => { cancelled = true; preload.onload = null }
-  }, [url])
+  }, [url, point, onLoad])
 
   useEffect(() => {
     const element = container.current

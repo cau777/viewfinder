@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from viewfinder_core import RayTracer
 from app.view import NoDataError, NoObstructionError, compute_view, panorama_png
+from app.description import DescriptionRequest, DescriptionResponse, describe_panorama
 
 from app.analysis import analyze
 
@@ -85,6 +86,20 @@ def panorama(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     # The LiDAR does not change while the server runs
     return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.post("/api/panorama/description", response_model=DescriptionResponse)
+def panorama_description(req: DescriptionRequest, tracer: Annotated[RayTracer, Depends(get_tracer)]) -> DescriptionResponse:
+    """Request separately from the PNG so AI latency never delays the image.
+
+    The prototype regenerates the same deterministic panorama from coordinates.
+    The sync route runs in a worker thread while other requests remain available.
+    """
+    try:
+        png = panorama_png(tracer, req.latitude, req.longitude)
+    except NoDataError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return describe_panorama(png)
 
 
 # --- Production: serve the built React app from the same process ------------

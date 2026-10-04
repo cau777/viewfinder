@@ -130,6 +130,7 @@ h1{font-size:23px}
 .legend-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--color-accent-2)}
 .panorama{position:absolute;inset:0;overflow:hidden;cursor:grab;touch-action:pan-y;user-select:none;outline-offset:-2px}
 .panorama:active{cursor:grabbing}
+.panorama-hint{margin:8px 16px 0;font-size:11px;line-height:1.5;color:var(--color-muted);text-align:center}
 .panorama-track{position:absolute;top:0;bottom:0;left:0;background-repeat:repeat-x;will-change:transform}
 .compass-mark{position:absolute;bottom:6px;transform:translateX(-50%);font-size:8px;letter-spacing:1px;color:#fffc;text-shadow:0 1px 2px #000a;padding-top:6px;border-top:1px solid #fff6}
 .compass-mark.cardinal{font-size:10px;font-weight:600;color:#fff}

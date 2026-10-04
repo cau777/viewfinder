@@ -34,6 +34,18 @@ export async function fetchView(point: Coordinates, signal: AbortSignal): Promis
 
 export type AddressResult = Coordinates & { label: string }
 
+export async function fetchDescription(point: Coordinates, signal: AbortSignal): Promise<string> {
+  const response = await fetch('/api/panorama/description', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(point),
+    signal,
+  })
+  const body = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Unable to describe this view.')
+  return body.description
+}
+
 // Vancouver and its immediate surroundings, in west/south/east/north order.
 const VANCOUVER_SEARCH_BOUNDS = [-123.30, 49.19, -123.00, 49.33] as const
 
@@ -58,5 +70,5 @@ export async function searchAddresses(query: string, signal: AbortSignal): Promi
 /** PNG of the full circle around a point, coloured by what each ray hits. Starts at north and turns
  * clockwise; the backend renders 4 pixels per degree, so its width covers 360° exactly. */
 export function panoramaUrl(point: Coordinates): string {
-  return `/api/panorama.png?${new URLSearchParams({ latitude: String(point.latitude), longitude: String(point.longitude) })}`
+  return `/api/panorama.png?${new URLSearchParams({ latitude: String(point.latitude), longitude: String(point.longitude), render: 'no-collision-v1' })}`
 }

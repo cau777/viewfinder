@@ -1,5 +1,5 @@
 use crate::grid::FullGrid;
-use crate::ray_collisions::RayCastResult::{Collision, ProbablyOcean, ProbablySky};
+use crate::ray_collisions::RayCastResult::{Collision, NoCollision};
 use crate::ray_tracing::IntersectionWalk;
 use crate::util::Coordinates;
 use nalgebra::Vector2;
@@ -29,10 +29,8 @@ pub enum RayCastResult {
         /// ASPRS class of the point hit (6 building, 9 water, ...), None if the export has no classes
         class: Option<u8>,
     },
-    /// Pointing up and left the dataset without hitting anything
-    ProbablySky,
-    /// Pointing down and left the dataset without hitting anything: the dataset has no points over open water
-    ProbablyOcean,
+    /// Left the dataset without hitting a surface.
+    NoCollision,
 }
 
 /// How far the surface at horizontal distance `distance` sits below the observer's horizontal plane
@@ -100,7 +98,7 @@ pub fn ray_collisions(grid: &FullGrid,
                 point = next_point(&mut walk);
             }
 
-            if angle < 0.0 { ProbablyOcean } else { ProbablySky }
+            NoCollision
         })
         .collect()
 }
@@ -198,12 +196,11 @@ mod tests {
 
     const EAST: f64 = std::f64::consts::FRAC_PI_2;
 
-    /// Distance of a collision, inf for the sky and -inf for the ocean
+    /// Distance of a collision, inf when no surface was hit
     fn distance(result: RayCastResult) -> f64 {
         match result {
             Collision { distance, .. } => distance,
-            ProbablySky => f64::INFINITY,
-            ProbablyOcean => f64::NEG_INFINITY,
+            NoCollision => f64::INFINITY,
         }
     }
 
@@ -266,18 +263,18 @@ mod tests {
                 let entry = observer.x + got * angle.cos();
                 assert_eq!(coordinates, Coordinates::from_utm(entry + 0.25, observer.y));
             } else {
-                assert_eq!(result, ProbablySky, "angle {angle}");
+                assert_eq!(result, NoCollision, "angle {angle}");
             }
         }
     }
 
     #[test]
-    fn looking_down_over_water_is_ocean() {
+    fn looking_down_beyond_data_has_no_collision() {
         let grid = wall_grid();
-        // Standing on the wall, looking just below the horizon: passes over the ground and into the water
+        // Standing on the wall, looking just below the horizon: passes over the ground and leaves the dataset
         let observer = Vector2::new(21.0, -15.0);
         let result = ray_collisions(&grid, observer, EAST, 31.0, -0.001, -0.001, 1)[0];
-        assert_eq!(result, ProbablyOcean);
+        assert_eq!(result, NoCollision);
     }
 
     #[test]
@@ -324,11 +321,7 @@ mod tests {
                         })
                     })
                     .map_or(
-                        if angle < 0.0 {
-                            ProbablyOcean
-                        } else {
-                            ProbablySky
-                        },
+                        NoCollision,
                         |p| Collision {
                             distance: p.top_distance_to_observer / angle.cos(),
                             vertical_angle: angle,
@@ -359,7 +352,7 @@ mod tests {
         // Index 2 is east, towards the wall 5.75 m away: the lowest ray hits the ground, the highest (80°) clears it
         let east = &results[2 * vertical..3 * vertical];
         assert!(matches!(east[0], Collision { horizontal_angle, .. } if horizontal_angle == EAST));
-        assert_eq!(east[vertical - 1], ProbablySky);
+        assert_eq!(east[vertical - 1], NoCollision);
     }
 
     #[test]
@@ -374,7 +367,7 @@ mod tests {
         let observer = Vector2::new(0.0, -1500.0);
         assert_eq!(
             ray_collisions(&grid, observer, EAST, 19.0, 0.0, 0.0, 1)[0],
-            ProbablySky
+            NoCollision
         );
         assert!(matches!(
             ray_collisions(&grid, observer, EAST, 18.0, 0.0, 0.0, 1)[0],

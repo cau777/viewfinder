@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app, get_tracer
 from app.view import OBSERVER_HEIGHT
-from viewfinder_core import RayTracer, latlon_to_utm, utm_to_latlon
+from viewfinder_core import RayResult, RayTracer, latlon_to_utm, utm_to_latlon
 
 client = TestClient(app)
 
@@ -88,6 +88,13 @@ def test_collisions_carry_the_class_hit(tracer):
     columns = tracer.ray_collisions_around(*OBSERVER, 10.0 + OBSERVER_HEIGHT, -0.5, 0.0, 2, 0.0, 2 * math.pi, 8)
     assert columns[2][1].classification == 6
     assert columns[6][0].classification == 2
+
+
+def test_rays_beyond_data_have_no_collision_at_any_elevation(tracer):
+    columns = tracer.ray_collisions_around(*OBSERVER, 100.0, -0.001, 0.001, 2, 0.0, 2 * math.pi, 8)
+    assert all(isinstance(result, RayResult.NoCollision) for column in columns for result in column)
+    distances = tracer.ray_collisions(*OBSERVER, 1.0, 0.0, 100.0, -0.001, 0.001, 2)
+    assert distances == [math.inf, math.inf]
 
 
 def test_panorama_is_a_png_of_the_full_circle():

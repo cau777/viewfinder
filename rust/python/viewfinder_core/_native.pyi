@@ -93,19 +93,12 @@ class RayResult:
             Elevation angle of the ray, radians.
             """
     @final
-    class Ocean(RayResult):
+    class NoCollision(RayResult):
         """
-        Pointing down and left the dataset without hitting anything (no points over open water).
-        """
-        __match_args__: Final = ()
-        def __new__(cls, /) -> RayResult.Ocean: ...
-    @final
-    class Sky(RayResult):
-        """
-        Pointing up and left the dataset without hitting anything.
+        Left the dataset without hitting a surface.
         """
         __match_args__: Final = ()
-        def __new__(cls, /) -> RayResult.Sky: ...
+        def __new__(cls, /) -> RayResult.NoCollision: ...
 
 @final
 class RayTracer:
@@ -167,7 +160,7 @@ class RayTracer:
         Casts `resolution` rays from UTM (x, y) at `observer_altitude` metres, in one horizontal direction,
         at elevation angles (radians) evenly spaced from `min_elevation` to `max_elevation`, both included.
         Returns one value per angle, lowest first: the distance in metres the ray travels before hitting
-        the surface, `inf` if it probably reaches the sky, or `-inf` if it probably reaches the ocean.
+        the surface, or `inf` if it leaves the dataset without a collision.
         """
     def ray_collisions_around(self, /, x: float, y: float, observer_altitude: float, min_elevation: float, max_elevation: float, vertical_resolution: int, min_horizontal_angle: float, max_horizontal_angle: float, horizontal_resolution: int) -> list[list[RayResult]]:
         """
